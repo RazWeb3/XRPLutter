@@ -15,8 +15,30 @@
  理由: 実装の進捗（オーケストレーションのリファクタリングと事前チェックの導入）を最新仕様へ反映するため。
  2025/11/09 12:37 追記: Soft SBTの最小サポート（メタデータ補助: custom.sbt=true付与、判定ヘルパー）を追加。UI/SDKによる転送抑止は非強制（任意）とし、将来拡張で検討。
  理由: アプリ内限定の非転送ポリシーを柔軟に付与できるようにするため（チェーン非転送と両立）。
- 2025/11/09 12:45 変更: XRPLutter.transferNftにSoft SBT運用補助を追加（`metadataJson`, `warnIfSoftSbt`, `blockIfSoftSbt`）。
- 理由: メタデータ方針に基づき、アプリ内での送付時に警告/ブロックを可能にするため（任意設定、デフォルトは警告有効・ブロック無効）。
+2025/11/09 12:45 変更: XRPLutter.transferNftにSoft SBT運用補助を追加（`metadataJson`, `warnIfSoftSbt`, `blockIfSoftSbt`）。
+理由: メタデータ方針に基づき、アプリ内での送付時に警告/ブロックを可能にするため（任意設定、デフォルトは警告有効・ブロック無効）。
+2025/11/09 12:58 変更: WalletConnectorにマルチプロバイダ対応のアダプタ構造を導入（Xaman/Crossmark/GemWallet/WalletConnect）。Xaman連携はバックエンドプロキシ方式を推奨。
+理由: 普及率の高いウォレットから順次対応し、秘密鍵非保持と安全なキー管理を両立するため。
+2025/11/09 13:03 追記: 公開エントリポイント（`lib/xrplutter.dart`）が主要型をexportする方針を明記（WalletConnector, WalletConnectorConfig, WalletProvider 等）。
+理由: READMEのコード例をライブラリ単一importで完結させ、開発者体験を改善するため。
+2025/11/09 13:28 追記: WalletConnectorの進捗イベントAPI（SignProgressEvent/State）とキャンセル制御（CancelToken）を追加。WalletConnectorConfigにCrossmark/GemWallet/WalletConnectのベースURLを拡張。
+理由: 進捗ステート/キャンセル/タイムアウトのイベントAPI要求への対応と、BYOS設計でウォレット別URLを任意設定できるようにするため。
+2025/11/09 13:42 追記: マネージドプロキシ・オプション（有料）の概要と、ウォレット別URLフォルダ＋v1のエンドポイント設計を章として追加。
+理由: 議事録の合意事項（BYOS前提＋オプション提供）とURL設計ルール（/xumm/v1/ 等）を仕様に明記して整合性を担保するため。
+2025/11/09 15:50 追記: WalletConnectorConfigに `webSubmitByExtension` と `verifyAddressBeforeSign` を追加。Crossmark/GemWallet連携における送信方式（拡張側submit/SDK側submit）と事前アドレス検証の挙動を明文化。
+理由: 実拡張APIの差異に柔軟対応し、検証を任意化するための設定を仕様へ反映。
+2025/11/10 12:25 追記: CrossmarkのWebインタロップ呼び出し優先順位（async.signAndWait→sync.sign+api.awaitRequest/sync.getResponse→api.request+awaitRequest）と、結果の正規化（txHash/hash/txid/tx_blob/uuid等の代表キー抽出）を明記。
+理由: 実機観測に基づく正しい入口の確立と、SDK側の安定動作のため。
+2025/11/10 11:10 変更: Crossmark/GemWalletのWebインタロップ待機タイムアウトを `WalletConnectorConfig.signingTimeout` に統一。
+理由: 固定30秒ではユーザー操作時間により早期タイムアウトが発生し得るため、設定値で柔軟に制御できるよう仕様へ反映。
+2025/11/10 16:20 追記: GemWalletのWebインタロップ呼び出し優先順位をCrossmark同等のパターンへ統一（async/sync/api/旧来/xrpl名前空間の多段フォールバック）。戻り値正規化（txHash/hash/txid/tx_blob/signed/rejected/error/payloadId/uuid等）を仕様へ明示。
+理由: 拡張ごとのAPI配置差異に強耐性で対応し、SDKの相互運用性を高めるため。
+2025/11/10 16:22 追記: デモアプリ（WalletConnector Demo）にSigning Timeoutスライダーを追加し、`WalletConnectorConfig.signingTimeout` をUIから動的変更可能にした（初期値45秒推奨、既定値90秒）。
+理由: 実環境の署名所要時間に合わせたチューニングと、再現性の高い検証を行うため。
+2025/11/10 16:35 追記: タイムアウト時の拡張UI挙動を明記（SDKのタイムアウトは拡張ウィンドウを閉じない）。推奨運用（手動で閉じる/無視して次の署名要求へ進む/スライダーでタイムアウト延長）を追記。
+理由: 実機でタイムアウト後も拡張側UIが残るケースがあり、正しい運用手順を仕様に明示するため。
+2025/11/10 19:26 追記: デモUIに WalletConnect Proxy Base URL 入力欄を追加し、SDKへ設定を渡せるようにした。SDK側はベースURL連結を Uri.resolve へ統一し、末尾スラッシュ有無に依存しない安全なURL組み立てに改善。
+理由: マネージド/自前プロキシの検証利便性を高め、設定記述揺れによるURL不整合を防ぐため。
 -->
 
 # XRPLutter NFT Kit SDK 仕様書
@@ -93,6 +115,9 @@ class TransferResult { String offerId; String txHash; }
 class BurnResult { String txHash; }
 ```
 
+補足（公開エントリポイントのexport）:
+- `lib/xrplutter.dart` は、`WalletConnector`, `WalletConnectorConfig`, `WalletProvider` など主要型を再エクスポートします。これにより、利用者は `import 'package:xrplutter_sdk/xrplutter.dart';` の単一importでSDKの公開型を利用できます。
+
 ## 3. 内部仕様
 ### 3.1 XRPLClient
 - JSON-RPC/WebSocketにて以下のメソッドを利用（例）:
@@ -126,10 +151,137 @@ class BurnResult { String txHash; }
 - 外部ウォレットへ署名要求を送る（Deep Link/QR等）
 - SDKは秘密鍵を保持しない
 - 署名拒否/タイムアウトをハンドリング
- - 署名API（案）:
-   - `Future<Map<String, dynamic>> signAndSubmit({required Map<String, dynamic> txJson})`
-   - 署名前のtx_jsonを受け取り、外部ウォレットで署名→`tx_blob`送信までを仲介（初期リリースはスタブ）。
- - オーケストレーション: XRPLutterの`mintNft/transferNft/burnNft`は、各NftServiceビルダーでtx_jsonを構築し、WalletConnectorの`signAndSubmit`へ渡す流れを採用。
+  - 署名API:
+    - `Future<Map<String, dynamic>> signAndSubmit({required Map<String, dynamic> txJson})`
+    - 署名前のtx_jsonを受け取り、外部ウォレットで署名→`tx_blob`送信までを仲介。
+  - オーケストレーション: XRPLutterの`mintNft/transferNft/burnNft`は、各NftServiceビルダーでtx_jsonを構築し、WalletConnectorの`signAndSubmit`へ渡す流れ。
+
+#### マルチプロバイダ対応（アダプタ構造）
+- 対応方針（優先順）: Xaman（旧XUMM）→ Crossmark → GemWallet → WalletConnect v2（可否調査）
+- アダプタIF（概念）:
+  - `WalletAdapter.signAndSubmit({txJson, session, config, client})`
+  - `config`: `WalletConnectorConfig`（XamanプロキシURL、署名タイムアウト、ポーリング間隔）
+  - `client`: `XRPLClient`（submitやtx取得に利用）
+
+#### 進捗イベントAPI（SignProgressEvent）とキャンセル
+- WalletConnectorは進捗イベントをStreamで公開: `Stream<SignProgressEvent> progressStream`
+- 主要ステート（SignProgressState）:
+  - created（ペイロード生成）
+  - opened（ユーザーが署名画面を開いた）
+  - signed（署名完了）
+  - submitted（XRPL送信完了）
+  - rejected（拒否）
+  - timeout（タイムアウト）
+  - canceled（クライアント側キャンセル）
+  - error（エラー）
+- キャンセル制御: `CancelToken` を内部管理。`cancelSigning()` を呼ぶと、進行中フローを停止し `canceled` イベントを発火。
+- 推奨ポーリング: 初期2秒、opened以降は3〜5秒のバックオフ。レート制限とSLOに応じて調整可。
+
+#### Xaman（旧XUMM）連携（推奨: バックエンドプロキシ方式）
+- 目的: XUMMのAPIキー/シークレットをクライアントへ置かない
+- フロー（UX最適案）:
+  1) プロキシへペイロード作成（tx_json渡し）
+  2) 戻り値のdeeplink/QR URLでユーザーへ署名提示（UIはアプリ側）
+  3) プロキシ経由で署名結果をポーリング（accepted/rejected/timeout）
+  4) 署名済みならtxHash返却（プロキシがsubmit済み）／未送信なら`tx_blob`を受領し`XRPLClient.submit`で送信
+
+イベント発火例（Xamanアダプタ）
+- created: payloadId, deepLink/qrUrl を含む
+- opened: ステータスに基づき検出可能な場合
+- signed: 署名完了時
+- submitted: txHash確定時（プロキシsubmit／クライアントsubmit）
+- rejected/timeout/error: 各条件で発火
+
+#### Crossmark/GemWallet（Web拡張）連携
+- Flutter WebのJS interopで拡張へ署名要求→結果受領→XRPL送信
+- 未インストール/拒否/互換性エラーのハンドリング
+ - 送信方式の選択（`WalletConnectorConfig.webSubmitByExtension`）:
+  - `true`（デフォルト）: 拡張が署名後にXRPLへsubmit。SDKは結果から`txHash`を受領して `submitted` を発火。
+  - `false`: 拡張は `tx_blob` を返却する想定。SDK側で `XRPLClient.submit` を実行し、成功時に `submitted` を発火。
+- 事前アドレス検証（`WalletConnectorConfig.verifyAddressBeforeSign`）:
+  - `true`: 署名前に拡張から現在アドレスを取得し、セッションの`address`と一致しない場合は `error` を発火して中断。
+  - `false`（デフォルト）: アドレス検証をスキップ（拡張がアドレス取得APIを提供しない場合や、複数アカウント運用時に適する）。
+ - 待機タイムアウト: Crossmark/GemWalletの署名待機は `WalletConnectorConfig.signingTimeout` を用いて制御する（デフォルト90秒）。
+   - ユーザーがUIで承認しない／拡張が応答しない場合は `timeout` イベントを発火し、内部的に `SignTimeout` 例外をスロー。
+   - デモアプリの実装では、`SignTimeout` を catch した際に `canceled` イベント（messageに `Error: Bad state: SignTimeout`）も追加で発火するため、`timeout` と `canceled` の両方がログに並ぶことがある。これはUI伝達のための重複通知であり、仕様上の不整合ではない。
+   - 補足（拡張UIの扱い）: SDKのタイムアウトは拡張のウィンドウ/パネルを強制的に閉じません。拡張UIが残っている場合は、ユーザーが手動で閉じるか、そのUIを無視して次の署名要求へ進んでも問題ありません（次の要求は新しいペイロード/UUIDで処理されます）。
+     - 推奨運用: 1) 手動で拡張UIを閉じる、2) デモの「Cancel Signing」を押してローカル状態を整理、3) Signing timeoutスライダーで必要に応じて値を延長（例: 60〜90秒）、4) 署名を再試行。
+     - 留意点: 「Cancel Signing」はSDK側の待機を停止するだけで、拡張にキャンセル要求を送るわけではありません。拡張側にキャンセルAPIがある場合でも、互換性のため現状は呼び出していません。
+ - Crossmark呼び出しの優先順位（実機準拠）:
+   1) `window.crossmark.async.signAndWait(txJson, {submit})` を最優先で試行（存在しない場合は `async.signAndSubmit` も許容）。
+   2) `window.crossmark.sync.sign(txJson, {submit})` の返すID/UUIDに対して、`window.crossmark.api.awaitRequest(id)` または `window.crossmark.sync.getResponse(id)` で結果取得。
+   3) `window.crossmark.api.request(...)` を複数のシグネチャで試行し、取得した `request.uuid`（または `uuid`/文字列）に対して `api.awaitRequest(uuid)` で結果を待機。
+   4) 旧来のトップレベル `sign/signAndSubmit` や `xrpl.*` 名前空間は最終フォールバックとして試行。
+ - 戻り値の正規化: 結果オブジェクトから代表キーを抽出（トップレベル/ネスト）し、`txHash/hash/txid/tx_blob/txBlob/signedTransaction/rejected/error/payloadId/uuid/opened/accepted/submitted` をSDK側で解釈可能にする。
+
+ - GemWallet呼び出しの優先順位（Crossmark同等の統一パターン）:
+   1) `window.gemWallet.async.signAndWait(txJson, {submit})` を最優先で試行（存在しない場合は `async.signAndSubmit` も許容）。
+   2) `window.gemWallet.sync.sign(txJson, {submit})` の返すID/UUIDに対して、`window.gemWallet.api.awaitRequest(id)` または `window.gemWallet.sync.getResponse(id)` で結果取得。
+   3) `window.gemWallet.api.request(...)` を複数のシグネチャで試行し、取得した `request.uuid`（または `uuid`/文字列）に対して `api.awaitRequest(uuid)` で結果を待機。
+   4) 旧来のトップレベル `sign/signAndSubmit` や `gemwallet.xrpl.*` 名前空間は最終フォールバックとして試行（`window.gemWallet.xrpl.request(...)` などのXRPL名前空間も許容）。
+   5) 戻り値の正規化はCrossmarkと同様の規則を適用し、`txHash/hash/txid/tx_blob/signed/rejected/error/payloadId/uuid` 等の代表キーを抽出する。ネスト（`result/response/request`）も吸収する。
+
+ - デモアプリ（WalletConnector Demo）のUI:
+   - 署名タイムアウトはスライダーで動的調整可能。`WalletConnectorConfig.signingTimeout` に即時反映され、拡張の署名待機に適用される。
+   - 推奨初期値は45秒。検証環境やユーザー操作に応じて増減させる。
+    - WalletConnect Proxy Base URL を入力可能（任意）。例: `http://localhost:53211/walletconnect/v1/`。末尾スラッシュ有無はどちらでも可（SDKが `Uri.resolve` で安全に連結）。
+
+#### WalletConnect v2（調査→最小骨子／スケルトン）
+- XRPL対応ウォレットのサポート状況に依存。可能ならセッション確立→署名→送信のひな形を提供。
+- 2025/11/10 追記（スケルトン実装）:
+  - SDKの WalletConnectAdapter に、以下のイベントフローを持つスタブ実装を追加。
+    - created: WalletConnect v2 のペアリングURI（`wc:<topic>@2?relay-protocol=irn&symKey=<key>`）を生成して、イベントに deepLink として通知。デモUIのDeepLinkパネルでQR表示・コピーが可能。
+    - opened: ユーザーがウォレットアプリを開いた想定でイベント通知（スタブ）。
+    - signed: 署名完了のイベント通知（スタブ）。
+    - submitted: XRPL送信完了のイベント通知（スタブ）。戻り値には `dummyHash` を格納。
+  - 今後の拡張: `walletConnectProxyBaseUrl` を用いるバックエンド連携（セッション生成・リクエスト・ステータス取得・tx_blob/tx_hash受領）を実装予定。
+  - 制約: 本段階はスタブであり、実ウォレットとのハンドシェイクは行わない。UI/UXの確認用。
+
+プロキシ連携（BYOS）骨子（WalletConnect v2）:
+- ベースURL例: `/walletconnect/v1/`
+- セッション生成: `POST session/create`
+  - 入力: `{ tx_json: {...} }`
+  - 出力: `{ payloadId|sessionId|topic, pairingUri, qrUrl? }`
+  - 説明: WalletConnect v2のペアリングURIを生成し、UIでQR/DeepLink表示可能とする。
+- ステータス取得: `GET session/status/{payloadId|sessionId|topic}`
+  - 出力（例）: `{ opened: boolean, signed: boolean, rejected: boolean, txHash?: string, tx_blob?: string }`
+  - 説明: 署名進捗をポーリング。`txHash`があればプロキシ送信済み、`tx_blob`があればSDK側で`submit`実行。
+- エラー方針: HTTP非200はリトライ（pollingInterval）／タイムアウトは `signingTimeout` 満了で SignTimeout。
+- フォールバック: プロキシ未設定/失敗時はローカルで wc: ペアリングURIを生成し、スタブイベントでUI/UXを確認できるようにする。
+  - 仕様補足（URL連結）: SDKは `WalletConnectorConfig.walletConnectProxyBaseUrl` をベースとして、`Uri.resolve('session/create')` 等の相対連結でエンドポイントを呼び出す。`http://.../walletconnect/v1` と `http://.../walletconnect/v1/` のどちらでも同等に動作する。
+
+#### 設定: WalletConnectorConfig（例）
+```dart
+class WalletConnectorConfig {
+  final Uri? xamanProxyBaseUrl; // バックエンドプロキシのURL（Xaman）
+  final Uri? crossmarkProxyBaseUrl; // Crossmark（必要時）
+  final Uri? gemWalletProxyBaseUrl; // GemWallet（必要時）
+  final Uri? walletConnectProxyBaseUrl; // WalletConnect（必要時）
+  final Duration signingTimeout; // 署名待機のタイムアウト
+  final Duration pollingInterval; // ステータス取得の間隔
+  final bool webSubmitByExtension; // Web拡張が署名後にsubmitするか（true）/SDK側でsubmitするか（false）
+  final bool verifyAddressBeforeSign; // 署名前に拡張の現在アドレスとセッションアドレスを照合するか
+}
+
+### 3.6 マネージドプロキシ・オプション（有料）
+- 目的: 自サーバ準備が難しい利用者向けに、短期イベント／月次サブスク／従量課金のいずれかでプロキシを提供。
+- 提供範囲: `POST /payload/create` と `GET /payload/status/{payloadId}` を基本とし、送信責務はA/Bを選択可能。
+  - A案: サーバ側でsubmit実行→`txHash`返却（推奨。クライアント側はハッシュ確定まで待機）
+  - B案: `tx_blob`返却→クライアントが`XRPLClient.submit`実行（アプリ側で送信責務を持つ）
+- セキュリティ/認証: 短命JWT（数分）＋スコープ（create/status）、CORSホワイトリスト、レート制限、WAF を推奨。
+- レート制限と計測: `create`/`status`/`submit`の呼出数、同時セッション数、ポーリング間隔を計測し課金・SLO管理に活用。
+
+### 3.7 エンドポイント設計（ウォレット別フォルダ＋v1）
+- ルール: ウォレット別にURLフォルダを分け、APIのバージョンを付与する。
+  - 例: `/xumm/v1/`, `/crossmark/v1/`, `/gemwallet/v1/`, `/walletconnect/v1/`
+- 代表エンドポイント（Xaman/XUMM）:
+  - `POST /xumm/v1/payload/create` （body: `{ tx_json: {...} }`）
+  - `GET  /xumm/v1/payload/status/{payloadId}` （返却: `{ opened?, signed?, rejected?, txHash? | tx_blob? }`）
+- BYOS: SDKの`WalletConnectorConfig`はベースURL（例: `http://your.domain/xumm/v1/`）を受け取り、`payload/*` を相対で叩く。
+
+仕様書更新有無: 更新しました（WalletConnect v2 スケルトン、プロキシ連携骨子、デモUIの「Connect WalletConnect」ボタン追加を反映）。
+補足更新: デモUIの WalletConnect Proxy Base URL 入力欄追加、およびSDKのURL連結方式（Uri.resolve）を追記しました。
+```
 
 ### 3.4 メタデータとストレージ（Metadata/StorageProvider）
 - メタデータは推奨スキーマ（`name`, `description`, `image`, `external_url`, `attributes`, `animation_url`, `custom`）を示しつつ、自由拡張を許容。

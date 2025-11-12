@@ -9,9 +9,6 @@
 
 import 'package:test/test.dart';
 import 'package:xrplutter_sdk/xrplutter.dart';
-import 'package:xrplutter_sdk/src/wallet_connector.dart';
-import 'package:xrplutter_sdk/src/nft_service.dart';
-import 'package:xrplutter_sdk/src/models.dart';
 
 class _FakeWalletConnector extends WalletConnector {
   @override

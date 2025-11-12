@@ -13,6 +13,8 @@
 // 理由: 非カストディアル運用の標準フロー（外部署名→submit）に合わせるため。
 // 2025/11/09 11:22 変更: transferNftにSoft SBT運用補助（metadataJsonによる判定、warnIfSoftSbt/blockIfSoftSbt）を追加。
 // 理由: メタデータベースのSoft SBT方針に基づき、アプリ内での送付時に警告/ブロックを可能にするため。
+// 2025/11/09 12:58 追記: 公開APIの利便性向上のため、主要型のexportを追加（WalletConnector, WalletConnectorConfig, WalletProvider 等）。
+// 理由: READMEのクイックスタート/プロキシ設定例でライブラリ単一importで完結するようにするため。
 // -------------------------------------------------------
 
 library xrplutter;
@@ -21,6 +23,13 @@ import 'src/models.dart';
 import 'src/wallet_connector.dart';
 import 'src/nft_service.dart';
 import 'src/metadata_utils.dart';
+
+// re-export public types for SDK consumers
+export 'src/models.dart';
+export 'src/wallet_connector.dart';
+export 'src/nft_service.dart';
+export 'src/metadata_utils.dart';
+export 'src/wallet_config.dart';
 
 class XRPLutter {
   XRPLutter({WalletConnector? walletConnector, NftService? nftService})

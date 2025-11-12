@@ -9,6 +9,8 @@
  理由: 議事録には内部検討内容が含まれるため、公開には不向きと判断。
  2025/11/09 11:35 追記: Soft SBT運用補助の使い方（metadataフラグ付与、送付時の警告/ブロック設定）を追加。
  理由: 初期リリースでの最小実装が利用者に分かりやすいよう運用ガイドを明記。
+ 2025/11/09 12:58 追記: ウォレット連携（Xaman/XUMM）のプロキシ方式とWalletConnectorConfigの使い方を追加。WalletProviderの標準定数（xumm/xaman/crossmark/gemwallet/walletconnect）を利用するコード例を追記。
+ 理由: 普及ウォレットへの順次対応方針に合わせ、導入手順と設定の明確化を図るため。
 -->
 
 # XRPLutter SDK 導入ガイド
@@ -69,6 +71,35 @@ final br = await sdk.burnNft(nftId: mint.nftId);
 ```
 
 非カストディアル運用では、SDK内部で`NftService.build*TxJson`によりtx_jsonを構築し、`WalletConnector.signAndSubmit`へ渡して外部署名→送信が行われます。受取側の`NFTokenAcceptOffer`は受取者のウォレットで別途署名してください。
+
+## ウォレット連携（Xaman/XUMM）とプロキシ設定
+XUMMのAPIキー/シークレットはクライアントアプリに置かず、バックエンドプロキシで管理する方式を推奨します。SDKはプロキシを介してペイロード作成・ステータス取得を行います。
+
+使用例（プロキシ設定）:
+```dart
+import 'package:xrplutter_sdk/xrplutter.dart';
+
+final connector = WalletConnector(
+  config: WalletConnectorConfig(
+    xamanProxyBaseUrl: Uri.parse('https://your-proxy.example.com/xumm/'),
+    signingTimeout: const Duration(seconds: 90),
+    pollingInterval: const Duration(seconds: 2),
+  ),
+);
+final sdk = XRPLutter(walletConnector: connector);
+
+// プロバイダ指定（標準定数）
+await sdk.connectWallet(provider: WalletProvider.xumm); // or WalletProvider.xaman
+
+// 以降、mint/transfer/burnは通常通り呼び出し可能
+```
+
+補足:
+- プロキシのエンドポイント設計（例）
+  - POST {base}/payload/create → { payloadId, deepLink, uuid }
+  - GET  {base}/payload/status/{payloadId} → { signed/rejected/txHash or tx_blob }
+- 署名が完了していれば`txHash`を返却します。未送信の場合、`tx_blob`を受領してXRPLへ`submit`します。
+- SDKは進捗ステートやリンク（deeplink/QR）を内部的に扱います。UI表示はアプリ側で自由に設計してください（今後、イベント/コールバックの提供を検討）。
 
 ## Soft SBT運用補助（警告/ブロック）
 - 目的: アプリ内で「送付抑止」を図りたい場合に、メタデータの`custom.sbt=true`フラグを基に転送操作時に警告/ブロックを行います（任意設定）。
