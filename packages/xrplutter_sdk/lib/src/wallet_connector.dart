@@ -43,6 +43,14 @@
 // 理由: 環境によって応答キーが異なるケースに対応し、QR未表示の問題を解消するため。
 // 2025/11/13 13:47 変更: deepLinkからpayloadIdを推定して補完。payloadIdが不明な場合のステータスポーリングを中止し、エラー通知。
 // 理由: 一部環境でpayloadIdキーが返らないため、リンクからUUIDを抽出して安定動作させる。
+// 2025/11/13 14:20 変更: ステータス応答の観測キーをイベントメッセージへ併記し、診断性を向上。
+// 理由: opened/signed/rejected時の応答差異をUIログで把握しやすくするため。
+// 2025/11/13 15:20 変更: プロキシ呼び出しの認可ヘッダから暗黙の 'dev-secret' フォールバックを廃止し、JWT未設定時は即時エラー化。
+// 理由: 認可迂回のリスクを排除し本番相当のセキュア設定を強制するため。
+// 2025/11/13 15:20 追記: プロキシベースURLのスキーム検証（http/httpsのみ許可）を追加し、SSRFの足がかりとなる不正スキームを拒否。
+// 理由: data:, file:, javascript: 等の不正スキーム混入による誤リクエストを防止するため。
+// 2025/11/13 15:20 追記: HTTPリクエストにタイムアウト（10秒）を付与し、ハングによるUX悪化とDoS連鎖を防止。
+// 理由: ネットワーク異常時の待機無制限を避けるため。
 // -------------------------------------------------------
 
 import 'models.dart';
@@ -193,16 +201,25 @@ class XamanAdapter implements WalletAdapter {
     }
 
     final base = config.xamanProxyBaseUrl!;
+    final _scheme = base.scheme.toLowerCase();
+    if (_scheme != 'http' && _scheme != 'https') {
+      throw ArgumentError('Invalid proxy base URL scheme: ${base.scheme}');
+    }
+    final _jwt = (config.jwtBearerToken ?? '').trim();
+    if (_jwt.isEmpty) {
+      throw StateError('Missing JWT bearer token for Xaman proxy');
+    }
     // ペイロード作成
-    final createRes = await http.post(
+    final createRes = await http
+        .post(
       base.resolve('payload/create'),
       headers: {
         'Content-Type': 'application/json',
-        if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
-        if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+        'Authorization': 'Bearer ' + _jwt,
       },
       body: jsonEncode({'tx_json': txJson}),
-    );
+    )
+        .timeout(const Duration(seconds: 10));
     if (createRes.statusCode != 200) {
       throw StateError('Xaman proxy create failed: HTTP ${createRes.statusCode}');
     }
@@ -269,13 +286,14 @@ class XamanAdapter implements WalletAdapter {
       if (cancelToken.canceled) {
         throw StateError('SignCanceled');
       }
-          final statusRes = await http.get(
+          final statusRes = await http
+              .get(
             base.resolve('payload/status/$payloadId'),
             headers: {
-              if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
-              if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+              'Authorization': 'Bearer ' + _jwt,
             },
-          );
+          )
+              .timeout(const Duration(seconds: 10));
       if (statusRes.statusCode != 200) {
         await Future.delayed(config.pollingInterval);
         continue;
@@ -284,13 +302,21 @@ class XamanAdapter implements WalletAdapter {
       final signed = statusJson['signed'] == true || (statusJson['response']?['signed'] == true);
       final rejected = statusJson['rejected'] == true || (statusJson['response']?['rejected'] == true);
       final opened = statusJson['opened'] == true || (statusJson['response']?['opened'] == true);
+      final observedStatusKeys = <String>[];
+      try {
+        observedStatusKeys.addAll(statusJson.keys.map((e) => e.toString()));
+        final r2 = statusJson['response'];
+        if (r2 is Map) observedStatusKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
+        final m2 = statusJson['meta'];
+        if (m2 is Map) observedStatusKeys.addAll(m2.keys.map((e) => 'meta.' + e.toString()));
+      } catch (_) {}
       if (opened) {
         onEvent(SignProgressEvent(
           state: SignProgressState.opened,
           payloadId: payloadId,
           deepLink: deepLink,
           qrUrl: qrUrl,
-          message: 'Payload opened by user',
+          message: observedStatusKeys.isEmpty ? 'Payload opened by user' : ('Payload opened by user | keys=' + observedStatusKeys.join(',')),
         ));
       }
       if (signed) break;
@@ -298,7 +324,7 @@ class XamanAdapter implements WalletAdapter {
         onEvent(SignProgressEvent(
           state: SignProgressState.rejected,
           payloadId: payloadId,
-          message: 'User rejected signing',
+          message: observedStatusKeys.isEmpty ? 'User rejected signing' : ('User rejected signing | keys=' + observedStatusKeys.join(',')),
         ));
         throw StateError('SignRejected by user');
       }
@@ -819,17 +845,26 @@ class WalletConnectAdapter implements WalletAdapter {
     // 1) プロキシ経由の試行
     if (config.walletConnectProxyBaseUrl != null) {
       final base = config.walletConnectProxyBaseUrl!; // 例: http://your.domain/walletconnect/v1/
+      final _schemeWc = base.scheme.toLowerCase();
+      if (_schemeWc != 'http' && _schemeWc != 'https') {
+        throw ArgumentError('Invalid proxy base URL scheme: ${base.scheme}');
+      }
       try {
         // セッション生成（pairing URIを取得）。tx_jsonも渡しておく（サーバー側で後続のリクエストを発行する設計を想定）
-        final createRes = await http.post(
+        final _jwt = (config.jwtBearerToken ?? '').trim();
+        if (_jwt.isEmpty) {
+          throw StateError('Missing JWT bearer token for WalletConnect proxy');
+        }
+        final createRes = await http
+            .post(
           base.resolve('session/create'),
           headers: {
             'Content-Type': 'application/json',
-            if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
-            if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+            'Authorization': 'Bearer ' + _jwt,
           },
           body: jsonEncode({'tx_json': txJson}),
-        );
+        )
+            .timeout(const Duration(seconds: 10));
         if (createRes.statusCode != 200) {
           throw StateError('WalletConnect proxy create failed: HTTP ${createRes.statusCode}');
         }
@@ -854,13 +889,14 @@ class WalletConnectAdapter implements WalletAdapter {
           if (cancelToken.canceled) {
             throw StateError('SignCanceled');
           }
-          final statusRes = await http.get(
+          final statusRes = await http
+              .get(
             base.resolve('session/status/$payloadId'),
             headers: {
-              if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
-              if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+              'Authorization': 'Bearer ' + _jwt,
             },
-          );
+          )
+              .timeout(const Duration(seconds: 10));
           if (statusRes.statusCode != 200) {
             await Future.delayed(config.pollingInterval);
             continue;

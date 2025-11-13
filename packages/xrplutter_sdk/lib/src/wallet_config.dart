@@ -18,6 +18,7 @@ class WalletConnectorConfig {
     this.jwtBearerToken,
     this.signingTimeout = const Duration(seconds: 90),
     this.pollingInterval = const Duration(seconds: 2),
+    this.httpTimeout = const Duration(seconds: 10),
     this.webSubmitByExtension = true,
     this.verifyAddressBeforeSign = false,
   });
@@ -42,6 +43,9 @@ class WalletConnectorConfig {
 
   /// 署名結果ポーリングの間隔（XUMMペイロードステータス取得など）
   final Duration pollingInterval;
+
+  /// プロキシへのHTTP呼び出しのタイムアウト
+  final Duration httpTimeout;
 
   /// Web拡張が署名後にそのままXRPLへsubmitするか（true）、SDK側でsubmitするか（false）を制御
   /// - true: 拡張からtxHashが返りやすい。false: tx_blobが返る想定でSDK側がsubmitする

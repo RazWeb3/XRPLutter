@@ -14,13 +14,14 @@ function getAllowedOrigins() {
 
 function allowCors(origin, res) {
   const allowed = getAllowedOrigins();
-  if (!origin || allowed.includes(origin)) {
-    if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
-    else res.setHeader('Access-Control-Allow-Origin', '*');
+  if (origin && allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
   }
+  // 厳格化: ワイルドカード許可は行わない
   res.setHeader('Access-Control-Allow-Credentials', 'false');
   res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Vary', 'Origin');
 }
 
 function handleCorsPreflight(req, res) {
@@ -43,7 +44,14 @@ function verifyJwt(req, res) {
     return false;
   }
   try {
-    jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      res.statusCode = 500;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'server misconfigured: JWT_SECRET missing' }));
+      return false;
+    }
+    jwt.verify(token, secret);
     return true;
   } catch (e) {
     res.statusCode = 401;

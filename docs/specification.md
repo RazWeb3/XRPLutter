@@ -39,6 +39,8 @@
 理由: 実機でタイムアウト後も拡張側UIが残るケースがあり、正しい運用手順を仕様に明示するため。
 2025/11/10 19:26 追記: デモUIに WalletConnect Proxy Base URL 入力欄を追加し、SDKへ設定を渡せるようにした。SDK側はベースURL連結を Uri.resolve へ統一し、末尾スラッシュ有無に依存しない安全なURL組み立てに改善。
 理由: マネージド/自前プロキシの検証利便性を高め、設定記述揺れによるURL不整合を防ぐため。
+2025/11/13 20:45 追記: クリエイター導入チェックリストを追加（Proxy環境変数、JWT運用、SDK設定、検証・トラブルシュート）。
+理由: SDK公開後に迷わず本番フローを構築できるよう手順を整備。
 -->
 
 # XRPLutter NFT Kit SDK 仕様書
@@ -379,3 +381,44 @@ final br = await sdk.burnNft(nftId: mint.nftId);
 - KYC/AMLフックのための拡張ポイント
 
 本仕様書は常に最新版を維持し、SDKの設計/実装変更が発生した場合は速やかに更新します。
+
+---
+
+## 13. クリエイター導入チェックリスト（BYOS／XUMM）
+
+### 13.1 準備（XUMM）
+- XUMM開発者ポータルで`XUMM_API_KEY`/`XUMM_API_SECRET`を取得
+- バックエンド（例: Vercel）に環境変数を設定
+  - `XUMM_API_KEY` / `XUMM_API_SECRET`
+  - `JWT_SECRET`（例: 本番用の十分に長いランダム文字列）
+  - `CORS_ORIGINS`（本番のWebオリジンをカンマ区切り）
+
+### 13.2 プロキシ（BYOS）
+- ベースURL例: `https://<your-app>.vercel.app/api/xumm/v1/`
+- エンドポイント:
+  - `POST payload/create`（入力: `{ tx_json: {...} }`）
+  - `GET  payload/status/{payloadId}`（出力: `{ opened?, signed?, rejected?, txHash? | tx_blob? }`）
+- 認証: `Authorization: Bearer <JWT>`（HS256で`JWT_SECRET`署名）
+
+### 13.3 SDK設定
+- `WalletConnectorConfig.xamanProxyBaseUrl` に上記ベースURLを設定
+- `WalletConnectorConfig.jwtBearerToken` にフロント取得済みJWTを渡す
+- 署名フロー例（SignIn推奨）:
+  - `tx_json = { TransactionType: 'SignIn' }`
+  - 生成結果の`deepLink/qrUrl`をUIで提示
+
+### 13.4 検証
+- curlで`create/status`が`200`となり、`payloadId/deepLink/qrUrl`と`opened/signed`が取れること
+- ブラウザのNetworkタブで`POST create`レスポンスに`payloadId`または`next.always/pushed`/`refs.qr_png`が含まれることを確認
+- UIでQR表示→XUMMで承認→`signed/submitted`と`txHash`反映
+
+### 13.5 トラブルシュート
+- `401 invalid token`: JWT未署名/失効/鍵不一致 → フロントでJWT再取得、`JWT_SECRET`整合
+- `400 checksum_invalid`: 宛先アドレス不正 → 有効なXRPLクラシックアドレスへ修正
+- `already resolved`: 同一`uuid`再利用 → 新規`payloadId`で再生成
+- `status null`: `payloadId`未確定 → `deepLink`からUUID抽出／プロキシ実装を確認
+
+### 13.6 運用（本番）
+- JWTはバックエンド`/auth/token`で自動発行・期限前更新（15–60分の短命）
+- レート制限／監視（create/status/submit呼出数）
+- 送信責務: プロキシsubmit（推奨）／クライアントsubmit（`tx_blob`）の選択

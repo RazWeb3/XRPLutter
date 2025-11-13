@@ -1,6 +1,9 @@
 // -------------------------------------------------------
 // 目的・役割: XUMM/Xaman ペイロードステータス取得スタブ
 // 作成日: 2025/11/10
+// 更新履歴:
+// 2025/11/13 15:25 追記: payloadIdの形式検証（UUID v4）を追加し、不正IDによる外部API叩きを抑止。
+// 理由: 入力検証不足による不要な外部呼び出し・診断困難の防止。
 // -------------------------------------------------------
 
 const { handleCorsPreflight, allowCors, verifyJwt, sendJson } = require('../../../../_utils/common');
@@ -18,6 +21,11 @@ module.exports = async (req, res) => {
   }
 
   const id = req.query.payloadId;
+  const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!id || !uuidV4.test(String(id))) {
+    res.statusCode = 400;
+    return sendJson(res, { error: 'invalid payloadId' });
+  }
   const r = await fetch(`https://xumm.app/api/v1/platform/payload/${encodeURIComponent(id)}`, {
     method: 'GET',
     headers: {

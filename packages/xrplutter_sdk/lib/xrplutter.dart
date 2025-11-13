@@ -15,6 +15,8 @@
 // 理由: メタデータベースのSoft SBT方針に基づき、アプリ内での送付時に警告/ブロックを可能にするため。
 // 2025/11/09 12:58 追記: 公開APIの利便性向上のため、主要型のexportを追加（WalletConnector, WalletConnectorConfig, WalletProvider 等）。
 // 理由: READMEのクイックスタート/プロキシ設定例でライブラリ単一importで完結するようにするため。
+// 2025/11/13 15:40 追記: XRPLClientを公開exportに追加。
+// 理由: デモ/アプリ側でXRPLClientを直接注入して接続再利用・性能調整できるようにするため。
 // -------------------------------------------------------
 
 library xrplutter;
@@ -30,6 +32,7 @@ export 'src/wallet_connector.dart';
 export 'src/nft_service.dart';
 export 'src/metadata_utils.dart';
 export 'src/wallet_config.dart';
+export 'src/xrpl_client.dart';
 
 class XRPLutter {
   XRPLutter({WalletConnector? walletConnector, NftService? nftService})

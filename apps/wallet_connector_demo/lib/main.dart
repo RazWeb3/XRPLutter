@@ -31,8 +31,11 @@
 // 理由: 作成イベント後にQRが画面外にあると見逃しやすいため、即時確認できる配置に改善。
 // 2025/11/13 12:45 変更: connectフローで_deepLink/_qrUrlのリセットを廃止し、イベントで設定されたリンクを保持。
 // 理由: 接続直後のリセットによりQRが消えるケースがあるため、イベント駆動の表示を維持する。
+// 2025/11/13 14:20 追加: ステータス表示パネル（opened/signed/rejected/txHash）を追加し、診断性を向上。
+// 理由: 進捗ログだけでなく現況を明示してユーザー確認を容易にするため。
 // -------------------------------------------------------
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:xrplutter_sdk/xrplutter.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
@@ -72,11 +75,17 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
   WalletConnector _connector = WalletConnector();
   WalletProvider? _provider;
   final List<SignProgressEvent> _events = [];
+  final List<SignProgressEvent> _pendingUiEvents = [];
   String? _deepLink;
   String? _qrUrl;
   String? _resultHash;
   String? _sessionAddress;
+  bool _statusOpened = false;
+  bool _statusSigned = false;
+  bool _statusRejected = false;
+  String? _lastError;
   final DateFormat _dateFmt = DateFormat('yyyy-MM-dd HH:mm:ss');
+  Timer? _uiBatchTimer;
   final Map<SignProgressState, bool> _filterEnabled = {
     SignProgressState.created: true,
     SignProgressState.opened: true,
@@ -97,23 +106,54 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
   String? _network;
   final TextEditingController _wcProxyController = TextEditingController();
   final TextEditingController _xamanProxyController = TextEditingController();
-  final TextEditingController _jwtController = TextEditingController(text: 'dev-secret');
+  final TextEditingController _jwtController = TextEditingController(text: '');
+  static const String _envWcProxy = String.fromEnvironment('WC_PROXY_BASE_URL');
+  static const String _envXamanProxy = String.fromEnvironment('XAMAN_PROXY_BASE_URL');
+  static const String _envJwt = String.fromEnvironment('JWT_BEARER_TOKEN');
+  StreamSubscription<SignProgressEvent>? _progressSub;
+  final XRPLClient _xrplClient = XRPLClient(timeout: const Duration(seconds: 12), maxRetries: 3, retryBaseDelayMs: 300);
 
   @override
   void initState() {
     super.initState();
-    _connector.progressStream.listen((e) {
-      setState(() {
-        _events.add(e);
-        _deepLink = e.deepLink ?? _deepLink;
-        _qrUrl = e.qrUrl ?? _qrUrl;
-        if ((e.deepLink == null || (e.deepLink ?? '').isEmpty) && (e.payloadId ?? '').isNotEmpty) {
-          _deepLink = 'https://xumm.app/sign/${e.payloadId}';
-          _qrUrl = 'https://xumm.app/sign/${e.payloadId}_q.png';
-        }
-        if (e.txHash != null) {
-          _resultHash = e.txHash;
-        }
+    if (_envWcProxy.isNotEmpty) {
+      _wcProxyController.text = _envWcProxy;
+    }
+    if (_envXamanProxy.isNotEmpty) {
+      _xamanProxyController.text = _envXamanProxy;
+    }
+    if (_envJwt.isNotEmpty) {
+      _jwtController.text = _envJwt;
+    }
+    _progressSub = _connector.progressStream
+        .distinct((a, b) => a.state == b.state && (a.payloadId ?? '') == (b.payloadId ?? '') && (a.txHash ?? '') == (b.txHash ?? ''))
+        .listen((e) {
+      _pendingUiEvents.add(e);
+      _uiBatchTimer ??= Timer(const Duration(milliseconds: 50), () {
+        final batch = List<SignProgressEvent>.from(_pendingUiEvents);
+        _pendingUiEvents.clear();
+        _uiBatchTimer = null;
+        setState(() {
+          for (final ev in batch) {
+            _events.add(ev);
+            if ((ev.deepLink ?? '').isNotEmpty) _deepLink = ev.deepLink;
+            if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
+            if ((ev.deepLink ?? '').isEmpty && (ev.payloadId ?? '').isNotEmpty) {
+              _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
+              _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
+            }
+            if (ev.txHash != null) _resultHash = ev.txHash;
+            if (ev.state == SignProgressState.opened) {
+              _statusOpened = true;
+            } else if (ev.state == SignProgressState.signed) {
+              _statusSigned = true;
+            } else if (ev.state == SignProgressState.rejected) {
+              _statusRejected = true;
+            } else if (ev.state == SignProgressState.error) {
+              _lastError = ev.message;
+            }
+          }
+        });
       });
     });
   }
@@ -201,14 +241,30 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
     final wcText = _wcProxyController.text.trim();
     if (wcText.isNotEmpty) {
       try {
-        wcBase = Uri.parse(wcText);
-      } catch (_) {}
+        final u = Uri.parse(wcText);
+        final s = u.scheme.toLowerCase();
+        if (s == 'http' || s == 'https') {
+          wcBase = u;
+        } else {
+          _lastError = 'Invalid WC proxy URL scheme: ${u.scheme}';
+        }
+      } catch (_) {
+        _lastError = 'Invalid WC proxy URL';
+      }
     }
     final xamanText = _xamanProxyController.text.trim();
     if (xamanText.isNotEmpty) {
       try {
-        xamanBase = Uri.parse(xamanText);
-      } catch (_) {}
+        final u = Uri.parse(xamanText);
+        final s = u.scheme.toLowerCase();
+        if (s == 'http' || s == 'https') {
+          xamanBase = u;
+        } else {
+          _lastError = 'Invalid Xaman proxy URL scheme: ${u.scheme}';
+        }
+      } catch (_) {
+        _lastError = 'Invalid Xaman proxy URL';
+      }
     }
     final jwtText = _jwtController.text.trim();
     _connector = WalletConnector(
@@ -220,20 +276,39 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
         xamanProxyBaseUrl: xamanBase,
         jwtBearerToken: jwtText.isNotEmpty ? jwtText : null,
       ),
+      client: _xrplClient,
     );
     // 進捗イベントの購読を再設定
-    _connector.progressStream.listen((e) {
-      setState(() {
-        _events.add(e);
-        _deepLink = e.deepLink ?? _deepLink;
-        _qrUrl = e.qrUrl ?? _qrUrl;
-        if ((e.deepLink == null || (e.deepLink ?? '').isEmpty) && (e.payloadId ?? '').isNotEmpty) {
-          _deepLink = 'https://xumm.app/sign/${e.payloadId}';
-          _qrUrl = 'https://xumm.app/sign/${e.payloadId}_q.png';
-        }
-        if (e.txHash != null) {
-          _resultHash = e.txHash;
-        }
+    await _progressSub?.cancel();
+    _progressSub = _connector.progressStream
+        .distinct((a, b) => a.state == b.state && (a.payloadId ?? '') == (b.payloadId ?? '') && (a.txHash ?? '') == (b.txHash ?? ''))
+        .listen((e) {
+      _pendingUiEvents.add(e);
+      _uiBatchTimer ??= Timer(const Duration(milliseconds: 50), () {
+        final batch = List<SignProgressEvent>.from(_pendingUiEvents);
+        _pendingUiEvents.clear();
+        _uiBatchTimer = null;
+        setState(() {
+          for (final ev in batch) {
+            _events.add(ev);
+            if ((ev.deepLink ?? '').isNotEmpty) _deepLink = ev.deepLink;
+            if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
+            if ((ev.deepLink ?? '').isEmpty && (ev.payloadId ?? '').isNotEmpty) {
+              _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
+              _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
+            }
+            if (ev.txHash != null) _resultHash = ev.txHash;
+            if (ev.state == SignProgressState.opened) {
+              _statusOpened = true;
+            } else if (ev.state == SignProgressState.signed) {
+              _statusSigned = true;
+            } else if (ev.state == SignProgressState.rejected) {
+              _statusRejected = true;
+            } else if (ev.state == SignProgressState.error) {
+              _lastError = ev.message;
+            }
+          }
+        });
       });
     });
 
@@ -247,6 +322,10 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
       _provider = provider;
       _events.clear();
       _resultHash = null;
+      _statusOpened = false;
+      _statusSigned = false;
+      _statusRejected = false;
+      _lastError = null;
     });
   }
 
@@ -283,7 +362,20 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
     setState(() {
       _events.clear();
       _resultHash = null;
+      _statusOpened = false;
+      _statusSigned = false;
+      _statusRejected = false;
+      _lastError = null;
     });
+  }
+
+  @override
+  void dispose() {
+    _progressSub?.cancel();
+    _wcProxyController.dispose();
+    _xamanProxyController.dispose();
+    _jwtController.dispose();
+    super.dispose();
   }
 
   // フィルタ適用後のイベント一覧
@@ -501,6 +593,11 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                 label: const Text('Connect Xaman (XUMM)'),
               ),
               ElevatedButton.icon(
+                onPressed: _signSample,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry signing'),
+              ),
+              ElevatedButton.icon(
                 onPressed: _cancel,
                 icon: const Icon(Icons.cancel),
                 label: const Text('Cancel Signing'),
@@ -521,6 +618,28 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
             const SizedBox(height: 4),
             Text('Session address: ${_sessionAddress ?? '-'}'),
             const SizedBox(height: 8),
+            Card(
+              elevation: 0,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Status'),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(child: Text('opened: ${_statusOpened}')),
+                        Expanded(child: Text('signed: ${_statusSigned}')),
+                        Expanded(child: Text('rejected: ${_statusRejected}')),
+                      ],
+                    ),
+                    if (_resultHash != null) Text('txHash: $_resultHash'),
+                    if (_lastError != null) Text('error: $_lastError', style: const TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ),
             if (_deepLink != null)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -552,6 +671,32 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                               );
                           },
                         ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            try {
+                              final u = Uri.parse(_deepLink!);
+                              final s = u.scheme.toLowerCase();
+                              final host = u.host.toLowerCase();
+                              if (s == 'https' && host == 'xumm.app') {
+                                html.window.open(_deepLink!, '_blank');
+                              } else if (s == 'http' || s == 'https') {
+                                html.window.open(_deepLink!, '_blank');
+                              } else {
+                                ScaffoldMessenger.of(context)
+                                  ..clearSnackBars()
+                                  ..showSnackBar(const SnackBar(
+                                    content: Text('Unsafe deep link scheme blocked'),
+                                    backgroundColor: Colors.red,
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: Duration(milliseconds: 1600),
+                                  ));
+                              }
+                            } catch (_) {}
+                          },
+                          icon: const Icon(Icons.open_in_new),
+                          label: const Text('Open Xaman link'),
+                        ),
                       ],
                     ),
                     SelectableText(_deepLink!),
@@ -574,9 +719,13 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                     SizedBox(
                       height: _qrSize,
                       width: _qrSize,
-                      child: QrImageView(
-                        data: _deepLink!,
-                        version: QrVersions.auto,
+                      child: RepaintBoundary(
+                        child: QrImageView(
+                          data: _deepLink!,
+                          version: QrVersions.auto,
+                          gapless: true,
+                          backgroundColor: Colors.transparent,
+                        ),
                       ),
                     ),
                   ],
@@ -600,7 +749,22 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                     SizedBox(
                       height: _qrSize,
                       width: _qrSize,
-                      child: Image.network(_qrUrl!, errorBuilder: (c, e, s) => const Center(child: Text('Failed to load image'))),
+                      child: (() {
+                        try {
+                          final u = Uri.parse(_qrUrl!);
+                          final s = u.scheme.toLowerCase();
+                          if (s == 'http' || s == 'https') {
+                            return Image.network(
+                              _qrUrl!,
+                              cacheWidth: _qrSize.toInt(),
+                              cacheHeight: _qrSize.toInt(),
+                              filterQuality: FilterQuality.low,
+                              errorBuilder: (c, e, s) => const Center(child: Text('Failed to load image')),
+                            );
+                          }
+                        } catch (_) {}
+                        return const Center(child: Text('Blocked non-HTTP(S) image URL'));
+                      })(),
                     ),
                   ],
                 ),
@@ -707,6 +871,7 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
       ),
       child: ListView.builder(
         itemCount: filtered.length,
+        itemExtent: 56,
         itemBuilder: (context, index) {
           final e = filtered[index];
           final ts = _dateFmt.format(e.timestamp.toLocal());
