@@ -4,6 +4,40 @@
 // -------------------------------------------------------
 
 const jwt = require('jsonwebtoken');
+const { getStore } = require('./store');
+
+function getClientId(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (typeof xf === 'string' && xf.length > 0) return xf.split(',')[0].trim();
+  try {
+    return req.socket && req.socket.remoteAddress ? String(req.socket.remoteAddress) : 'unknown';
+  } catch (_) {
+    return 'unknown';
+  }
+}
+
+async function rateLimit(req, res) {
+  try {
+    const store = getStore();
+    const id = getClientId(req);
+    const windowSec = parseInt(process.env.RL_WINDOW_SECONDS || '10', 10);
+    const maxReq = parseInt(process.env.RL_MAX_REQUESTS || '20', 10);
+    const key = `rl:${Math.floor(Date.now() / (windowSec * 1000))}:${id}`;
+    const current = (await store.getWcSession(key)) || { count: 0 };
+    current.count = (current.count || 0) + 1;
+    await store.setWcSession(key, current);
+    if (current.count > maxReq) {
+      res.statusCode = 429;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'rate limit exceeded' }));
+      return false;
+    }
+    return true;
+  } catch (_) {
+    // ストア未構成時はレート制限をスキップ（最小構成）
+    return true;
+  }
+}
 
 function getAllowedOrigins() {
   return (process.env.CORS_ORIGINS || '')
@@ -51,7 +85,18 @@ function verifyJwt(req, res) {
       res.end(JSON.stringify({ error: 'server misconfigured: JWT_SECRET missing' }));
       return false;
     }
-    jwt.verify(token, secret);
+    const decoded = jwt.verify(token, secret);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const maxTtl = parseInt(process.env.JWT_MAX_TTL_SECONDS || '300', 10);
+    if (typeof decoded === 'object' && decoded && typeof decoded.exp === 'number') {
+      const ttl = decoded.exp - nowSec;
+      if (ttl > maxTtl) {
+        res.statusCode = 401;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: 'invalid token: exp too far' }));
+        return false;
+      }
+    }
     return true;
   } catch (e) {
     res.statusCode = 401;
@@ -70,6 +115,7 @@ function sendJson(res, obj) {
 module.exports = {
   allowCors,
   handleCorsPreflight,
+  rateLimit,
   verifyJwt,
   sendJson,
 };

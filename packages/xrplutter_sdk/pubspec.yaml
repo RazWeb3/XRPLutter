@@ -3,7 +3,7 @@
 
 name: xrplutter_sdk
 description: Flutter/Dart SDK for XRPL NFT operations (mint, transfer, burn) with external wallet signing.
-version: 0.1.0
+version: 0.1.1
 publish_to: none
 
 environment:

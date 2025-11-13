@@ -17,6 +17,16 @@
 
 このドキュメントは、Flutter向けXRPLutter SDKの利用時に重要となるポイントを簡潔にまとめたものです。詳細な技術仕様は`docs/specification.md`をご参照ください。
 
+## クイックスタート（最短）
+```
+flutter run -d web-server --web-port 53210 \
+  --dart-define=WC_PROXY_BASE_URL=http://localhost:53211/walletconnect/v1/ \
+  --dart-define=XAMAN_PROXY_BASE_URL=http://localhost:53211/xumm/v1/ \
+  --dart-define=JWT_BEARER_TOKEN=dev-secret
+```
+
+アプリ側では `String.fromEnvironment('XAMAN_PROXY_BASE_URL')` 等で値を取得し、`WalletConnectorConfig` へ渡します。詳細は `docs/onboarding_template.md` を参照してください。
+
 ## Ethereumとの主な違い（XRPL NFT）
 - 受取方式が異なります: XRPLのNFT所有権移転は「オファー方式」で、受取側が`NFTokenAcceptOffer`を自ら署名・送信して初めて移転が成立します。
   - 非カストディアル運用では、受取のたびに受取側の署名が必要です（毎回）。
@@ -100,6 +110,16 @@ await sdk.connectWallet(provider: WalletProvider.xumm); // or WalletProvider.xam
   - GET  {base}/payload/status/{payloadId} → { signed/rejected/txHash or tx_blob }
 - 署名が完了していれば`txHash`を返却します。未送信の場合、`tx_blob`を受領してXRPLへ`submit`します。
 - SDKは進捗ステートやリンク（deeplink/QR）を内部的に扱います。UI表示はアプリ側で自由に設計してください（今後、イベント/コールバックの提供を検討）。
+- セキュリティ運用（推奨）:
+  - JWTは短寿命（例: 2分〜5分）でバックエンド発行し、`Authorization: Bearer` で使用
+  - 開発時は `JWT_SECRET=dev-secret` を許可するが、本番ではランダムで長い秘密鍵を使用
+  - CORSは `CORS_ORIGINS` にクライアントのオリジンのみを列挙（ワイルドカード不可）
+  - DeepLink/QRの提示先はXaman公式ドメイン（`https://xumm.app/...`）等に限定し、ユーザー誘導用の外部URLはホワイトリスト運用
+
+## JWT運用指針（最小）
+- 開発: `JWT_SECRET=dev-secret` とし、クライアントは `Authorization: Bearer dev-secret`
+- 本番: HS256のJWTをバックエンドで短寿命発行（例: `expiresIn: '2m'`）
+- サーバ側検証: `exp` を必須化し、許容TTLを上限（例: `JWT_MAX_TTL_SECONDS=300`）で制限
 
 ## Soft SBT運用補助（警告/ブロック）
 - 目的: アプリ内で「送付抑止」を図りたい場合に、メタデータの`custom.sbt=true`フラグを基に転送操作時に警告/ブロックを行います（任意設定）。
@@ -130,6 +150,12 @@ await sdk.transferNft(
 注意:
 - Soft SBTはアプリ/UXポリシーでの抑止です。外部ツールでは送付可能です。アプリ外の流通リスクを許容できない場合はHard SBT（NTT）をご利用ください。
 - `metadataJson`が未指定の場合、Soft SBT判定は実行されません（外部フェッチは初期リリースでは非対応）。
+
+## 例外一覧（最小）
+- `SignRejected`（概念）: ユーザーが署名拒否。現実装では `StateError('SignRejected by user')` を送出
+- `SignTimeout`（概念）: 署名待機のタイムアウト。現実装では `StateError('SignTimeout')` を送出
+- `ProxyError`（概念）: バックエンドプロキシからの異常応答。現実装では `StateError('Xaman proxy create failed: HTTP ...')` などで送出
+- `InvalidConfig`（概念）: URLスキームやJWT未設定。現実装では `ArgumentError('Invalid proxy base URL scheme: ...')` や `StateError('Missing JWT bearer token ...')`
 
 ## 参考
 - 詳細仕様: `docs/specification.md`

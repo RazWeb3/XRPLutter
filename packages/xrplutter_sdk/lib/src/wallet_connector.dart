@@ -282,6 +282,7 @@ class XamanAdapter implements WalletAdapter {
     }
     final deadline = DateTime.now().add(config.signingTimeout);
     Map<String, dynamic>? statusJson;
+    bool _openedEmitted = false;
     while (DateTime.now().isBefore(deadline)) {
       if (cancelToken.canceled) {
         throw StateError('SignCanceled');
@@ -310,7 +311,7 @@ class XamanAdapter implements WalletAdapter {
         final m2 = statusJson['meta'];
         if (m2 is Map) observedStatusKeys.addAll(m2.keys.map((e) => 'meta.' + e.toString()));
       } catch (_) {}
-      if (opened) {
+      if (opened && !_openedEmitted) {
         onEvent(SignProgressEvent(
           state: SignProgressState.opened,
           payloadId: payloadId,
@@ -318,6 +319,7 @@ class XamanAdapter implements WalletAdapter {
           qrUrl: qrUrl,
           message: observedStatusKeys.isEmpty ? 'Payload opened by user' : ('Payload opened by user | keys=' + observedStatusKeys.join(',')),
         ));
+        _openedEmitted = true;
       }
       if (signed) break;
       if (rejected) {

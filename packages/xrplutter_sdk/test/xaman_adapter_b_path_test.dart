@@ -104,6 +104,7 @@ void main() {
         xamanProxyBaseUrl: Uri.parse('http://localhost:$port/xumm/v1/'),
         signingTimeout: const Duration(seconds: 5),
         pollingInterval: const Duration(milliseconds: 100),
+        jwtBearerToken: 'dev-secret',
       );
       final connector = WalletConnector(config: config, client: FakeXRPLClient());
       final events = <SignProgressEvent>[];

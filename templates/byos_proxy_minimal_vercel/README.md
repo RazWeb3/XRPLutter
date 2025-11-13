@@ -15,6 +15,7 @@
   - POST /api/xumm/v1/payload/create
   - GET  /api/xumm/v1/payload/status/:payloadId
 - セキュリティ最低限: 短命JWT検証、厳格CORS（ホワイトリスト）
+ - セキュリティ最低限: 短命JWT検証（`exp`必須＋TTL上限）、簡易レート制限、厳格CORS（ホワイトリスト）
 
 導入手順（最短）
 1) Vercelで「新規プロジェクト」を作成し、本テンプレートフォルダ（templates/byos_proxy_minimal_vercel）をリポジトリとしてインポート
@@ -30,8 +31,17 @@
    - XUMM/Xaman: https://your-app.vercel.app/api/xumm/v1/
 
 注意
-- KVなし（memory）はサーバレスのインスタンス切替で状態が揮発する可能性があります。ハッカソンや少人数の検証では成立しますが、本番ではKV/DB利用を推奨します。
+- KVなし（memory）はサーバレスのインスタンス切替で状態が揮発する可能性があります。少人数の検証やPoCでは成立しますが、本番ではKV/DB利用を推奨します。
 - KVありはUpstashの無料枠で開始可能ですが、レートや容量超過時は有料となります。最新の料金はUpstash/Vercelの公式を参照してください。
+
+JWT運用メモ
+- 開発: `JWT_SECRET=dev-secret` として、クライアントは簡易Bearerを使用可能
+- 本番: HS256のJWTをバックエンドで短寿命（例: 2–5分）発行し、`Authorization: Bearer <JWT>` を検証
+- TTL上限: `JWT_MAX_TTL_SECONDS`（例: 300）で`exp`が過度に先のトークンを拒否
+
+レート制限（最小）
+- 変数: `RL_WINDOW_SECONDS`（既定10秒）、`RL_MAX_REQUESTS`（既定20リクエスト）
+- 単位: IP/クライアントごとの固定窓カウント
 
 ライセンス/運用
 - 公開前にCORSのホワイトリストを最小にし、JWTを短命化してください。

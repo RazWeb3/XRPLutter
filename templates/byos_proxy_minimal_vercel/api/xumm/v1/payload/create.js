@@ -6,11 +6,12 @@
 // 理由: 不要な負荷や予期せぬ挙動、潜在的な攻撃ベクトル（過大ペイロード）を抑止するため。
 // -------------------------------------------------------
 
-const { handleCorsPreflight, allowCors, verifyJwt, sendJson } = require('../../../_utils/common');
+const { handleCorsPreflight, allowCors, rateLimit, verifyJwt, sendJson } = require('../../../_utils/common');
 
 module.exports = async (req, res) => {
   allowCors(req.headers.origin, res);
   if (handleCorsPreflight(req, res)) return;
+  if (!(await rateLimit(req, res))) return;
   if (!verifyJwt(req, res)) return;
 
   if (req.method !== 'POST') {

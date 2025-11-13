@@ -6,11 +6,12 @@
 // 理由: 入力検証不足による不要な外部呼び出し・診断困難の防止。
 // -------------------------------------------------------
 
-const { handleCorsPreflight, allowCors, verifyJwt, sendJson } = require('../../../../_utils/common');
+const { handleCorsPreflight, allowCors, rateLimit, verifyJwt, sendJson } = require('../../../../_utils/common');
 
 module.exports = async (req, res) => {
   allowCors(req.headers.origin, res);
   if (handleCorsPreflight(req, res)) return;
+  if (!(await rateLimit(req, res))) return;
   if (!verifyJwt(req, res)) return;
 
   const key = process.env.XUMM_API_KEY;

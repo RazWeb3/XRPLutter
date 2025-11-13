@@ -41,6 +41,8 @@
 理由: マネージド/自前プロキシの検証利便性を高め、設定記述揺れによるURL不整合を防ぐため。
 2025/11/13 20:45 追記: クリエイター導入チェックリストを追加（Proxy環境変数、JWT運用、SDK設定、検証・トラブルシュート）。
 理由: SDK公開後に迷わず本番フローを構築できるよう手順を整備。
+2025/11/13 21:10 追記: JWT必須化と短寿命exp検証、URLスキーム検証（http/httpsのみ）、進捗イベントopenedの重複抑制、例外型一覧（概念）を明記。
+理由: 提出前の最終仕上げとして、安定性とセキュリティ、ドキュメント整合性を高めるため。
 -->
 
 # XRPLutter NFT Kit SDK 仕様書
@@ -178,6 +180,7 @@ class BurnResult { String txHash; }
   - error（エラー）
 - キャンセル制御: `CancelToken` を内部管理。`cancelSigning()` を呼ぶと、進行中フローを停止し `canceled` イベントを発火。
 - 推奨ポーリング: 初期2秒、opened以降は3〜5秒のバックオフ。レート制限とSLOに応じて調整可。
+ - 重複抑制: `opened`は一度のみ通知する（SDK側で重複発火を抑止）
 
 #### Xaman（旧XUMM）連携（推奨: バックエンドプロキシ方式）
 - 目的: XUMMのAPIキー/シークレットをクライアントへ置かない
@@ -317,19 +320,23 @@ class WalletConnectorConfig {
 （注意）所有権移転はXRPLのオファー方式に基づき、受取側による`NFTokenAcceptOffer`署名が必要です（非カストディアル運用）。
 
 ## 4. エラー設計
-- エラー分類:
+- エラー分類（概念）:
   - WalletNotConnected
   - SignRejected / SignTimeout
+  - ProxyError（バックエンドからの異常応答）
   - NetworkError (timeout, unreachable)
   - InvalidParameter (metadataUri, nftId 等)
   - XRPLSubmitError (insufficient reserve, sequence mismatch 等)
-- 例外/戻り値: DartのResult型または例外で提供（実装時に選定）
+- 実装注記: 現行はDart標準の`StateError`/`ArgumentError`等で送出し、概念型へマッピング（READMEに一覧）
 
 ## 5. セキュリティ
 - 秘密鍵非保持（必須）
 - 入力検証の徹底（アドレス形式、URI、数値範囲）
 - 署名は常に外部ウォレットで実行
 - ネットワーク通信のTLS、署名要求のオリジン情報提示
+- プロキシの認証はJWT必須。`CORS_ORIGINS`でオリジンホワイトリストを管理（ワイルドカード不可）。
+- レート制限（最小）: 固定窓＋上限によりDoSを緩和。
+- URLスキーム検証: プロキシ/ノードのURLは`http/https`のみ許可（その他は拒否）。
 
 ## 6. 設定
 - ネットワーク: mainnet/testnetの切替
@@ -399,6 +406,7 @@ final br = await sdk.burnNft(nftId: mint.nftId);
   - `POST payload/create`（入力: `{ tx_json: {...} }`）
   - `GET  payload/status/{payloadId}`（出力: `{ opened?, signed?, rejected?, txHash? | tx_blob? }`）
 - 認証: `Authorization: Bearer <JWT>`（HS256で`JWT_SECRET`署名）
+ - JWT要件: `exp`を含む短寿命トークン（例: 2〜5分）。サーバ側でTTL上限（例: `JWT_MAX_TTL_SECONDS=300`）を検証。
 
 ### 13.3 SDK設定
 - `WalletConnectorConfig.xamanProxyBaseUrl` に上記ベースURLを設定
