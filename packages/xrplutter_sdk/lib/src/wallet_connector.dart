@@ -39,6 +39,10 @@
 // 理由: BYOSプロキシ連携のUX確認と段階的な実装の足がかりを整備するため。
 // 2025/11/10 19:20 変更: プロキシURL結合処理を Uri.resolve に置換し、末尾スラッシュ有無に依存しない安全なURL組み立てに改善。
 // 理由: ベースURLの記述揺れ（末尾スラッシュ有無）による連結不整合を防ぎ、設定の扱いやすさを高めるため。
+// 2025/11/13 13:30 変更: Xaman作成イベントのdeepLink/qrUrl取得を強化（next.pushed と refs.qr_png をフォールバックに追加）。
+// 理由: 環境によって応答キーが異なるケースに対応し、QR未表示の問題を解消するため。
+// 2025/11/13 13:47 変更: deepLinkからpayloadIdを推定して補完。payloadIdが不明な場合のステータスポーリングを中止し、エラー通知。
+// 理由: 一部環境でpayloadIdキーが返らないため、リンクからUUIDを抽出して安定動作させる。
 // -------------------------------------------------------
 
 import 'models.dart';
@@ -192,35 +196,86 @@ class XamanAdapter implements WalletAdapter {
     // ペイロード作成
     final createRes = await http.post(
       base.resolve('payload/create'),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
+        if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+      },
       body: jsonEncode({'tx_json': txJson}),
     );
     if (createRes.statusCode != 200) {
       throw StateError('Xaman proxy create failed: HTTP ${createRes.statusCode}');
     }
     final createJson = jsonDecode(createRes.body) as Map<String, dynamic>;
-    final payloadId = createJson['payloadId']?.toString() ?? createJson['uuid']?.toString();
-    final deepLink = createJson['deepLink']?.toString() ?? createJson['next']?['always']?.toString();
-    final qrUrl = createJson['qrUrl']?.toString();
+    String? payloadId = createJson['payloadId']?.toString() ?? createJson['uuid']?.toString();
+    String? deepLink = createJson['deepLink']?.toString();
+    final dynamic next = createJson['next'];
+    if ((deepLink == null || deepLink.isEmpty) && next is Map) {
+      deepLink = (next['always']?.toString()) ?? (next['pushed']?.toString());
+    }
+    String? qrUrl = createJson['qrUrl']?.toString();
+    final dynamic refs = createJson['refs'];
+    if ((qrUrl == null || qrUrl.isEmpty) && refs is Map) {
+      qrUrl = refs['qr_png']?.toString();
+    }
+    if ((deepLink == null || deepLink.isEmpty) && (payloadId != null && payloadId.isNotEmpty)) {
+      deepLink = 'https://xumm.app/sign/' + payloadId;
+    }
+    if ((qrUrl == null || qrUrl.isEmpty) && (payloadId != null && payloadId.isNotEmpty)) {
+      qrUrl = 'https://xumm.app/sign/' + payloadId + '_q.png';
+    }
+    if ((payloadId == null || payloadId.isEmpty) && (deepLink != null && deepLink.isNotEmpty)) {
+      try {
+        final uri = Uri.parse(deepLink);
+        final q = uri.queryParameters['payload'];
+        if (q != null && q.isNotEmpty) {
+          payloadId = q;
+        } else {
+          final segs = uri.pathSegments;
+          if (segs.isNotEmpty) {
+            final last = segs.last;
+            payloadId = last.split('?').first.split('_').first;
+          }
+        }
+      } catch (_) {}
+    }
 
+    final observedCreateKeys = <String>[];
+    try {
+      observedCreateKeys.addAll(createJson.keys.map((e) => e.toString()));
+    } catch (_) {}
     onEvent(SignProgressEvent(
       state: SignProgressState.created,
       payloadId: payloadId,
       deepLink: deepLink,
       qrUrl: qrUrl,
-      message: 'Payload created',
+      message: observedCreateKeys.isEmpty ? 'Payload created' : ('Payload created | keys=' + observedCreateKeys.join(',')),
     ));
 
     // ユーザー操作用のリンクはSDKから返却してもよいが、SDKの戻り値構造は現仕様ではhash中心のため
     // 現段階は内部でポーリングのみ実施し、UI提示はアプリ側が createJson を別途参照する前提とする。
 
+    // payloadIdが確定していない場合はポーリングしても意味がないため中止
+    if (payloadId == null || payloadId.isEmpty) {
+      onEvent(SignProgressEvent(
+        state: SignProgressState.error,
+        message: 'Missing payloadId',
+      ));
+      throw StateError('PayloadIdMissing');
+    }
     final deadline = DateTime.now().add(config.signingTimeout);
     Map<String, dynamic>? statusJson;
     while (DateTime.now().isBefore(deadline)) {
       if (cancelToken.canceled) {
         throw StateError('SignCanceled');
       }
-      final statusRes = await http.get(base.resolve('payload/status/$payloadId'));
+          final statusRes = await http.get(
+            base.resolve('payload/status/$payloadId'),
+            headers: {
+              if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
+              if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+            },
+          );
       if (statusRes.statusCode != 200) {
         await Future.delayed(config.pollingInterval);
         continue;
@@ -768,7 +823,11 @@ class WalletConnectAdapter implements WalletAdapter {
         // セッション生成（pairing URIを取得）。tx_jsonも渡しておく（サーバー側で後続のリクエストを発行する設計を想定）
         final createRes = await http.post(
           base.resolve('session/create'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
+            if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+          },
           body: jsonEncode({'tx_json': txJson}),
         );
         if (createRes.statusCode != 200) {
@@ -795,7 +854,13 @@ class WalletConnectAdapter implements WalletAdapter {
           if (cancelToken.canceled) {
             throw StateError('SignCanceled');
           }
-          final statusRes = await http.get(base.resolve('session/status/$payloadId'));
+          final statusRes = await http.get(
+            base.resolve('session/status/$payloadId'),
+            headers: {
+              if (config.jwtBearerToken != null) 'Authorization': 'Bearer ${config.jwtBearerToken}',
+              if (config.jwtBearerToken == null) 'Authorization': 'Bearer dev-secret',
+            },
+          );
           if (statusRes.statusCode != 200) {
             await Future.delayed(config.pollingInterval);
             continue;

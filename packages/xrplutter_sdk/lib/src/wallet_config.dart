@@ -15,6 +15,7 @@ class WalletConnectorConfig {
     this.crossmarkProxyBaseUrl,
     this.gemWalletProxyBaseUrl,
     this.walletConnectProxyBaseUrl,
+    this.jwtBearerToken,
     this.signingTimeout = const Duration(seconds: 90),
     this.pollingInterval = const Duration(seconds: 2),
     this.webSubmitByExtension = true,
@@ -33,6 +34,8 @@ class WalletConnectorConfig {
 
   /// WalletConnect連携用のベースURL（必要な場合に設定）
   final Uri? walletConnectProxyBaseUrl;
+
+  final String? jwtBearerToken;
 
   /// 署名待機のタイムアウト（ユーザー操作含む）
   final Duration signingTimeout;

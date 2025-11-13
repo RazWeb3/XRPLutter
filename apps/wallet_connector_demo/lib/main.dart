@@ -27,6 +27,10 @@
 // 理由: セッション・ペアリング・署名イベントのスケルトンをUIから確認できるようにするため。
 // 2025/11/10 19:24 追記: WalletConnect Proxy Base URL 入力欄を追加し、SDKへ渡す設定をUIから指定可能に。
 // 理由: マネージド/自前プロキシのベースURLをデモで切り替え検証するため。SDK側はUri.resolveで末尾スラッシュ有無を吸収。
+// 2025/11/13 12:45 変更: QR表示セクションをフィルタ群より上へ移動し、作成直後に視認できるように調整。
+// 理由: 作成イベント後にQRが画面外にあると見逃しやすいため、即時確認できる配置に改善。
+// 2025/11/13 12:45 変更: connectフローで_deepLink/_qrUrlのリセットを廃止し、イベントで設定されたリンクを保持。
+// 理由: 接続直後のリセットによりQRが消えるケースがあるため、イベント駆動の表示を維持する。
 // -------------------------------------------------------
 import 'package:flutter/material.dart';
 import 'package:xrplutter_sdk/xrplutter.dart';
@@ -92,6 +96,8 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
   String? _addrGemWallet;
   String? _network;
   final TextEditingController _wcProxyController = TextEditingController();
+  final TextEditingController _xamanProxyController = TextEditingController();
+  final TextEditingController _jwtController = TextEditingController(text: 'dev-secret');
 
   @override
   void initState() {
@@ -101,6 +107,10 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
         _events.add(e);
         _deepLink = e.deepLink ?? _deepLink;
         _qrUrl = e.qrUrl ?? _qrUrl;
+        if ((e.deepLink == null || (e.deepLink ?? '').isEmpty) && (e.payloadId ?? '').isNotEmpty) {
+          _deepLink = 'https://xumm.app/sign/${e.payloadId}';
+          _qrUrl = 'https://xumm.app/sign/${e.payloadId}_q.png';
+        }
         if (e.txHash != null) {
           _resultHash = e.txHash;
         }
@@ -187,18 +197,28 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
     // 設定フラグを反映した新しいWalletConnectorを生成
     // WalletConnect Proxy Base URL（任意）を設定（空なら未設定）
     Uri? wcBase;
+    Uri? xamanBase;
     final wcText = _wcProxyController.text.trim();
     if (wcText.isNotEmpty) {
       try {
         wcBase = Uri.parse(wcText);
       } catch (_) {}
     }
+    final xamanText = _xamanProxyController.text.trim();
+    if (xamanText.isNotEmpty) {
+      try {
+        xamanBase = Uri.parse(xamanText);
+      } catch (_) {}
+    }
+    final jwtText = _jwtController.text.trim();
     _connector = WalletConnector(
       config: WalletConnectorConfig(
         webSubmitByExtension: _webSubmitByExtension,
         verifyAddressBeforeSign: _verifyAddressBeforeSign,
         signingTimeout: Duration(seconds: _signingTimeoutSeconds),
         walletConnectProxyBaseUrl: wcBase,
+        xamanProxyBaseUrl: xamanBase,
+        jwtBearerToken: jwtText.isNotEmpty ? jwtText : null,
       ),
     );
     // 進捗イベントの購読を再設定
@@ -207,6 +227,10 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
         _events.add(e);
         _deepLink = e.deepLink ?? _deepLink;
         _qrUrl = e.qrUrl ?? _qrUrl;
+        if ((e.deepLink == null || (e.deepLink ?? '').isEmpty) && (e.payloadId ?? '').isNotEmpty) {
+          _deepLink = 'https://xumm.app/sign/${e.payloadId}';
+          _qrUrl = 'https://xumm.app/sign/${e.payloadId}_q.png';
+        }
         if (e.txHash != null) {
           _resultHash = e.txHash;
         }
@@ -222,23 +246,23 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
     setState(() {
       _provider = provider;
       _events.clear();
-      _deepLink = null;
-      _qrUrl = null;
       _resultHash = null;
-      // 画面に反映
     });
   }
 
   Future<void> _signSample() async {
-    // 接続済みでアドレスが取得できている場合は、自分宛て少額送金（1 drop）にして署名成功しやすくする
-    final dest = _sessionAddress ?? 'rEXAMPLEDEST';
-    final txJson = {
-      'TransactionType': 'Payment',
-      // 拡張がAccountを自動補完しない場合に備え、セッションアドレスを明示（取得済みなら）
-      if (_sessionAddress != null && _sessionAddress!.isNotEmpty) 'Account': _sessionAddress,
-      'Destination': dest,
-      'Amount': '1',
-    };
+    Map<String, dynamic> txJson;
+    final isXaman = (_provider?.name.toLowerCase() == 'xaman' || _provider?.name.toLowerCase() == 'xumm');
+    if (isXaman) {
+      txJson = {'TransactionType': 'SignIn'};
+    } else {
+      final dest = _sessionAddress ?? 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpRWL';
+      txJson = {
+        'TransactionType': 'Payment',
+        'Destination': dest,
+        'Amount': '1',
+      };
+    }
     try {
       final res = await _connector.signAndSubmit(txJson: txJson);
       setState(() {
@@ -419,14 +443,36 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('WalletConnect Proxy Base URL (optional)'),
+                const Text('WalletConnect Proxy Base URL (optional)'),
                     const SizedBox(height: 6),
                     TextField(
                       controller: _wcProxyController,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
-                        hintText: '例: http://localhost:53211/walletconnect/v1/',
+                      hintText: '例: http://localhost:53211/walletconnect/v1/',
                         helperText: '末尾スラッシュ有無はどちらでも可。SDKが安全に連結します（Uri.resolve）。',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Xaman (XUMM) Proxy Base URL (optional)'),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _xamanProxyController,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        hintText: '例: http://localhost:53211/xumm/v1/',
+                        helperText: '末尾スラッシュ有無はどちらでも可（Uri.resolve）。',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('JWT Bearer Token (開発用は dev-secret)'),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _jwtController,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        hintText: '例: dev-secret',
+                        helperText: 'Authorization: Bearer <token> として送信します。',
                       ),
                     ),
                   ],
@@ -450,6 +496,11 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                 label: const Text('Connect WalletConnect'),
               ),
               ElevatedButton.icon(
+                onPressed: () => _connect(WalletProvider.xaman),
+                icon: const Icon(Icons.qr_code),
+                label: const Text('Connect Xaman (XUMM)'),
+              ),
+              ElevatedButton.icon(
                 onPressed: _cancel,
                 icon: const Icon(Icons.cancel),
                 label: const Text('Cancel Signing'),
@@ -470,15 +521,6 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
             const SizedBox(height: 4),
             Text('Session address: ${_sessionAddress ?? '-'}'),
             const SizedBox(height: 8),
-            // フィルタチップ群
-            Wrap(spacing: 6, runSpacing: 6, children: SignProgressState.values.map((s) {
-              return FilterChip(
-                label: Text(s.name),
-                selected: _filterEnabled[s] ?? true,
-                onSelected: (v) => setState(() => _filterEnabled[s] = v),
-              );
-            }).toList()),
-            const SizedBox(height: 12),
             if (_deepLink != null)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -540,7 +582,6 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                   ],
                 ),
               ),
-            // deepLinkが未提供でもQR画像URLが提供される場合に備えた簡易表示
             if (_deepLink == null && _qrUrl != null)
               Container(
                 margin: const EdgeInsets.only(top: 12),
@@ -564,6 +605,15 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                   ],
                 ),
               ),
+            // フィルタチップ群
+            Wrap(spacing: 6, runSpacing: 6, children: SignProgressState.values.map((s) {
+              return FilterChip(
+                label: Text(s.name),
+                selected: _filterEnabled[s] ?? true,
+                onSelected: (v) => setState(() => _filterEnabled[s] = v),
+              );
+            }).toList()),
+            const SizedBox(height: 12),
             ],
           );
 
