@@ -23,6 +23,7 @@
 // 理由: GemWalletでもAPI配置差異に備え、リクエストID/UUID経由の待機に対応してCrossmark同等の堅牢性を確保するため。
 // -------------------------------------------------------
 
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 // Webのみで利用されるJSインタロップ系の検出ロジック
 import 'dart:html' as html;
 import 'dart:js_util' as js_util;

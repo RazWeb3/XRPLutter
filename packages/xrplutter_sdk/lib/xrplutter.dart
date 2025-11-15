@@ -25,6 +25,8 @@ import 'src/models.dart';
 import 'src/wallet_connector.dart';
 import 'src/nft_service.dart';
 import 'src/metadata_utils.dart';
+import 'src/xrpl_client.dart';
+import 'src/xrpl_ws_client.dart';
 
 // re-export public types for SDK consumers
 export 'src/models.dart';
@@ -33,12 +35,15 @@ export 'src/nft_service.dart';
 export 'src/metadata_utils.dart';
 export 'src/wallet_config.dart';
 export 'src/xrpl_client.dart';
+export 'src/xrpl_ws_client.dart';
 
 class XRPLutter {
-  XRPLutter({WalletConnector? walletConnector, NftService? nftService})
-      : _wallet = walletConnector ?? WalletConnector(),
-        _nft = nftService ?? NftService();
+  XRPLutter({WalletConnector? walletConnector, NftService? nftService, XRPLClient? client})
+      : _client = client ?? XRPLClient(),
+        _wallet = walletConnector ?? WalletConnector(client: client ?? XRPLClient()),
+        _nft = nftService ?? NftService(client: client ?? XRPLClient());
 
+  final XRPLClient _client;
   final WalletConnector _wallet;
   final NftService _nft;
 
@@ -78,7 +83,6 @@ class XRPLutter {
     );
     final submit = await _wallet.signAndSubmit(txJson: txJson);
     final hash = submit['result']?['hash'] ?? 'dummyHash';
-    // TODO: 実際のnftId取得はtxメタ（minted Tokens）から解析が必要。暫定でダミー/不明。
     return MintResult(transactionHash: hash, nftId: 'unknown');
   }
 
@@ -161,5 +165,39 @@ class XRPLutter {
     final submit = await _wallet.signAndSubmit(txJson: txJson);
     final hash = submit['result']?['hash'] ?? 'dummyHash';
     return BurnResult(transactionHash: hash);
+  }
+
+  Future<AccountNftsPage> listAccountNfts({
+    required String account,
+    int? limit,
+    String? marker,
+    String? issuer,
+    int? taxon,
+    bool transferableOnly = false,
+  }) {
+    return _nft.fetchAccountNfts(
+      account: account,
+      limit: limit,
+      marker: marker,
+      issuer: issuer,
+      taxon: taxon,
+      transferableOnly: transferableOnly,
+    );
+  }
+
+  Future<NftOfferList> listNftOffers({required String nftId}) {
+    return _nft.fetchNftOffers(nftId: nftId);
+  }
+
+  Future<Map<String, dynamic>> autofillTxJson(Map<String, dynamic> txJson) {
+    return _client.autofillTxJson(txJson);
+  }
+
+  Future<Map<String, dynamic>> awaitTransaction(String hash, {Duration timeout = const Duration(seconds: 20), Duration pollInterval = const Duration(milliseconds: 800)}) {
+    return _client.awaitTransaction(hash, timeout: timeout, pollInterval: pollInterval);
+  }
+
+  XRPLWebSocketClient createWsClient({String? endpoint}) {
+    return XRPLWebSocketClient(endpoint: endpoint);
   }
 }

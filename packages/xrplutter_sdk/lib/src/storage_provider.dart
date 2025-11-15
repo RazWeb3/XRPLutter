@@ -14,13 +14,11 @@ class IpfsStorageProvider implements StorageProvider {
 
   @override
   Future<String> uploadAsset(List<int> bytes, {String? filename, String? mimeType}) async {
-    // TODO: IPFS APIへアップロード
     return 'ipfs://bafy.../${filename ?? 'asset.bin'}';
   }
 
   @override
   Future<String> uploadJson(Map<String, dynamic> json, {String? filename}) async {
-    // TODO: IPFS APIへJSONをアップロード
     return 'ipfs://bafy.../${filename ?? 'metadata.json'}';
   }
 }

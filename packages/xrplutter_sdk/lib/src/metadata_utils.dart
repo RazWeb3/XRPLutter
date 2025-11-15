@@ -5,6 +5,8 @@
 // 更新履歴:
 // 2025/11/09 12:35 初版: addSoftSbtFlag/isSoftSbtJsonを追加（UI/SDK抑止は非強制、メタデータ補助のみ）。
 // 理由: Hard SBTに加え、アプリ内限定の非転送ポリシーを簡易に付与できるようにするため。
+// 2025/11/16 10:26 変更: resolveContentUriに許可ドメインのデフォルト制限を追加。
+// 理由: 任意URL許容によるSSRFリスクの抑制。
 // -------------------------------------------------------
 
 class MetadataUtils {
@@ -27,5 +29,38 @@ class MetadataUtils {
     final customSbt = custom is Map<String, dynamic> ? custom['sbt'] == true : false;
     final topLevelSbt = json['sbt'] == true;
     return customSbt || topLevelSbt;
+  }
+
+  static Uri? resolveContentUri(String uri, {Set<String> allowedHosts = const {'ipfs.io', 'arweave.net'}}) {
+    final u = uri.trim();
+    if (u.startsWith('ipfs://')) {
+      final cid = u.substring('ipfs://'.length);
+      return Uri.parse('https://ipfs.io/ipfs/' + cid);
+    }
+    if (u.startsWith('ar://')) {
+      final id = u.substring('ar://'.length);
+      return Uri.parse('https://arweave.net/' + id);
+    }
+    final parsed = Uri.tryParse(u);
+    if (parsed == null) return null;
+    if ((parsed.scheme == 'http' || parsed.scheme == 'https') && allowedHosts.contains(parsed.host.toLowerCase())) return parsed;
+    return null;
+  }
+
+  static Map<String, dynamic> normalizeMetadata(Map<String, dynamic> json) {
+    final m = Map<String, dynamic>.from(json);
+    final image = (m['image'] ?? m['image_url'] ?? m['imageURI'])?.toString();
+    if (image == null || image.isEmpty) {
+      m['image'] = 'https://via.placeholder.com/512?text=NFT';
+    }
+    final name = (m['name'] ?? m['title'])?.toString();
+    if (name == null || name.isEmpty) {
+      m['name'] = 'Untitled NFT';
+    }
+    final desc = (m['description'] ?? m['desc'])?.toString();
+    if (desc == null || desc.isEmpty) {
+      m['description'] = '';
+    }
+    return m;
   }
 }

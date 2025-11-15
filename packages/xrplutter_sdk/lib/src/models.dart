@@ -52,6 +52,18 @@ class BurnResult {
   final String transactionHash;
 }
 
+class AccountNftsPage {
+  AccountNftsPage({required this.items, this.marker});
+  final List<Map<String, dynamic>> items;
+  final String? marker;
+}
+
+class NftOfferList {
+  NftOfferList({required this.sellOffers, required this.buyOffers});
+  final List<Map<String, dynamic>> sellOffers;
+  final List<Map<String, dynamic>> buyOffers;
+}
+
 class NftMetadata {
   NftMetadata({
     required this.name,

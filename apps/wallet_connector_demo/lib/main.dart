@@ -34,6 +34,7 @@
 // 2025/11/13 14:20 追加: ステータス表示パネル（opened/signed/rejected/txHash）を追加し、診断性を向上。
 // 理由: 進捗ログだけでなく現況を明示してユーザー確認を容易にするため。
 // -------------------------------------------------------
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:xrplutter_sdk/xrplutter.dart';
@@ -58,7 +59,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'XRPLutter WalletConnector Demo',
-      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue)),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+      ),
       home: const WalletConnectorDemo(),
     );
   }
@@ -108,10 +111,16 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
   final TextEditingController _xamanProxyController = TextEditingController();
   final TextEditingController _jwtController = TextEditingController(text: '');
   static const String _envWcProxy = String.fromEnvironment('WC_PROXY_BASE_URL');
-  static const String _envXamanProxy = String.fromEnvironment('XAMAN_PROXY_BASE_URL');
+  static const String _envXamanProxy = String.fromEnvironment(
+    'XAMAN_PROXY_BASE_URL',
+  );
   static const String _envJwt = String.fromEnvironment('JWT_BEARER_TOKEN');
   StreamSubscription<SignProgressEvent>? _progressSub;
-  final XRPLClient _xrplClient = XRPLClient(timeout: const Duration(seconds: 12), maxRetries: 3, retryBaseDelayMs: 300);
+  final XRPLClient _xrplClient = XRPLClient(
+    timeout: const Duration(seconds: 12),
+    maxRetries: 3,
+    retryBaseDelayMs: 300,
+  );
 
   @override
   void initState() {
@@ -126,36 +135,42 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
       _jwtController.text = _envJwt;
     }
     _progressSub = _connector.progressStream
-        .distinct((a, b) => a.state == b.state && (a.payloadId ?? '') == (b.payloadId ?? '') && (a.txHash ?? '') == (b.txHash ?? ''))
+        .distinct(
+          (a, b) =>
+              a.state == b.state &&
+              (a.payloadId ?? '') == (b.payloadId ?? '') &&
+              (a.txHash ?? '') == (b.txHash ?? ''),
+        )
         .listen((e) {
-      _pendingUiEvents.add(e);
-      _uiBatchTimer ??= Timer(const Duration(milliseconds: 50), () {
-        final batch = List<SignProgressEvent>.from(_pendingUiEvents);
-        _pendingUiEvents.clear();
-        _uiBatchTimer = null;
-        setState(() {
-          for (final ev in batch) {
-            _events.add(ev);
-            if ((ev.deepLink ?? '').isNotEmpty) _deepLink = ev.deepLink;
-            if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
-            if ((ev.deepLink ?? '').isEmpty && (ev.payloadId ?? '').isNotEmpty) {
-              _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
-              _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
-            }
-            if (ev.txHash != null) _resultHash = ev.txHash;
-            if (ev.state == SignProgressState.opened) {
-              _statusOpened = true;
-            } else if (ev.state == SignProgressState.signed) {
-              _statusSigned = true;
-            } else if (ev.state == SignProgressState.rejected) {
-              _statusRejected = true;
-            } else if (ev.state == SignProgressState.error) {
-              _lastError = ev.message;
-            }
-          }
+          _pendingUiEvents.add(e);
+          _uiBatchTimer ??= Timer(const Duration(milliseconds: 50), () {
+            final batch = List<SignProgressEvent>.from(_pendingUiEvents);
+            _pendingUiEvents.clear();
+            _uiBatchTimer = null;
+            setState(() {
+              for (final ev in batch) {
+                _events.add(ev);
+                if ((ev.deepLink ?? '').isNotEmpty) _deepLink = ev.deepLink;
+                if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
+                if ((ev.deepLink ?? '').isEmpty &&
+                    (ev.payloadId ?? '').isNotEmpty) {
+                  _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
+                  _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
+                }
+                if (ev.txHash != null) _resultHash = ev.txHash;
+                if (ev.state == SignProgressState.opened) {
+                  _statusOpened = true;
+                } else if (ev.state == SignProgressState.signed) {
+                  _statusSigned = true;
+                } else if (ev.state == SignProgressState.rejected) {
+                  _statusRejected = true;
+                } else if (ev.state == SignProgressState.error) {
+                  _lastError = ev.message;
+                }
+              }
+            });
+          });
         });
-      });
-    });
   }
 
   Future<void> _readExtensionInfo() async {
@@ -173,9 +188,7 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
           cmAddr = js_util.getProperty(cm, 'address');
         } else if (js_util.hasProperty(cm, 'request')) {
           final p = js_util.callMethod(cm, 'request', [
-            {
-              'method': 'getAddress',
-            }
+            {'method': 'getAddress'},
           ]);
           cmAddr = await js_util.promiseToFuture(p);
         }
@@ -193,9 +206,7 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
           gwAddr = js_util.getProperty(gw, 'address');
         } else if (js_util.hasProperty(gw, 'request')) {
           final p = js_util.callMethod(gw, 'request', [
-            {
-              'method': 'getAddress',
-            }
+            {'method': 'getAddress'},
           ]);
           gwAddr = await js_util.promiseToFuture(p);
         }
@@ -281,36 +292,42 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
     // 進捗イベントの購読を再設定
     await _progressSub?.cancel();
     _progressSub = _connector.progressStream
-        .distinct((a, b) => a.state == b.state && (a.payloadId ?? '') == (b.payloadId ?? '') && (a.txHash ?? '') == (b.txHash ?? ''))
+        .distinct(
+          (a, b) =>
+              a.state == b.state &&
+              (a.payloadId ?? '') == (b.payloadId ?? '') &&
+              (a.txHash ?? '') == (b.txHash ?? ''),
+        )
         .listen((e) {
-      _pendingUiEvents.add(e);
-      _uiBatchTimer ??= Timer(const Duration(milliseconds: 50), () {
-        final batch = List<SignProgressEvent>.from(_pendingUiEvents);
-        _pendingUiEvents.clear();
-        _uiBatchTimer = null;
-        setState(() {
-          for (final ev in batch) {
-            _events.add(ev);
-            if ((ev.deepLink ?? '').isNotEmpty) _deepLink = ev.deepLink;
-            if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
-            if ((ev.deepLink ?? '').isEmpty && (ev.payloadId ?? '').isNotEmpty) {
-              _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
-              _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
-            }
-            if (ev.txHash != null) _resultHash = ev.txHash;
-            if (ev.state == SignProgressState.opened) {
-              _statusOpened = true;
-            } else if (ev.state == SignProgressState.signed) {
-              _statusSigned = true;
-            } else if (ev.state == SignProgressState.rejected) {
-              _statusRejected = true;
-            } else if (ev.state == SignProgressState.error) {
-              _lastError = ev.message;
-            }
-          }
+          _pendingUiEvents.add(e);
+          _uiBatchTimer ??= Timer(const Duration(milliseconds: 50), () {
+            final batch = List<SignProgressEvent>.from(_pendingUiEvents);
+            _pendingUiEvents.clear();
+            _uiBatchTimer = null;
+            setState(() {
+              for (final ev in batch) {
+                _events.add(ev);
+                if ((ev.deepLink ?? '').isNotEmpty) _deepLink = ev.deepLink;
+                if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
+                if ((ev.deepLink ?? '').isEmpty &&
+                    (ev.payloadId ?? '').isNotEmpty) {
+                  _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
+                  _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
+                }
+                if (ev.txHash != null) _resultHash = ev.txHash;
+                if (ev.state == SignProgressState.opened) {
+                  _statusOpened = true;
+                } else if (ev.state == SignProgressState.signed) {
+                  _statusSigned = true;
+                } else if (ev.state == SignProgressState.rejected) {
+                  _statusRejected = true;
+                } else if (ev.state == SignProgressState.error) {
+                  _lastError = ev.message;
+                }
+              }
+            });
+          });
         });
-      });
-    });
 
     await _connector.connect(provider: provider);
     // 接続直後にセッションアドレスを取得
@@ -331,7 +348,9 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
 
   Future<void> _signSample() async {
     Map<String, dynamic> txJson;
-    final isXaman = (_provider?.name.toLowerCase() == 'xaman' || _provider?.name.toLowerCase() == 'xumm');
+    final isXaman =
+        (_provider?.name.toLowerCase() == 'xaman' ||
+        _provider?.name.toLowerCase() == 'xumm');
     if (isXaman) {
       txJson = {'TransactionType': 'SignIn'};
     } else {
@@ -349,7 +368,12 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
       });
     } catch (e) {
       setState(() {
-        _events.add(SignProgressEvent(state: SignProgressState.canceled, message: 'Error: $e'));
+        _events.add(
+          SignProgressEvent(
+            state: SignProgressState.canceled,
+            message: 'Error: $e',
+          ),
+        );
       });
     }
   }
@@ -421,18 +445,22 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
     bool gemwalletDetected = false;
     if (kIsWeb) {
       try {
-        crossmarkDetected = js_util.hasProperty(html.window, 'crossmark') && js_util.getProperty(html.window, 'crossmark') != null;
+        crossmarkDetected =
+            js_util.hasProperty(html.window, 'crossmark') &&
+            js_util.getProperty(html.window, 'crossmark') != null;
       } catch (_) {}
       try {
-        gemwalletDetected = (js_util.hasProperty(html.window, 'gemWallet') && js_util.getProperty(html.window, 'gemWallet') != null) ||
-            (js_util.hasProperty(html.window, 'gemwallet') && js_util.getProperty(html.window, 'gemwallet') != null) ||
-            (js_util.hasProperty(html.window, 'gem_wallet') && js_util.getProperty(html.window, 'gem_wallet') != null);
+        gemwalletDetected =
+            (js_util.hasProperty(html.window, 'gemWallet') &&
+                js_util.getProperty(html.window, 'gemWallet') != null) ||
+            (js_util.hasProperty(html.window, 'gemwallet') &&
+                js_util.getProperty(html.window, 'gemwallet') != null) ||
+            (js_util.hasProperty(html.window, 'gem_wallet') &&
+                js_util.getProperty(html.window, 'gem_wallet') != null);
       } catch (_) {}
     }
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('WalletConnector Progress Demo'),
-      ),
+      appBar: AppBar(title: const Text('WalletConnector Progress Demo')),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final bool isWide = constraints.maxWidth >= 900;
@@ -440,21 +468,123 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
           final leftColumn = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            // 拡張検出ステータス
-            Card(
-              elevation: 0,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
+              // 拡張検出ステータス
+              Card(
+                elevation: 0,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Crossmark: ${crossmarkDetected ? 'Detected' : 'Not detected'}',
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          'GemWallet: ${gemwalletDetected ? 'Detected' : 'Not detected'}',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // 拡張からの情報読取（Webのみ）
+              if (kIsWeb)
+                Card(
+                  elevation: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Crossmark Address: ${_addrCrossmark ?? '-'}',
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                'GemWallet Address: ${_addrGemWallet ?? '-'}',
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Network: ${_network ?? '-'}'),
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: OutlinedButton.icon(
+                            onPressed: _readExtensionInfo,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Read address/network'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // 設定フラグの切替UI
+              Card(
+                elevation: 0,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: Text('Crossmark: ${crossmarkDetected ? 'Detected' : 'Not detected'}')),
-                    Expanded(child: Text('GemWallet: ${gemwalletDetected ? 'Detected' : 'Not detected'}')),
+                    SwitchListTile(
+                      title: const Text('拡張側でsubmitする（webSubmitByExtension）'),
+                      subtitle: const Text(
+                        'true: 署名後に拡張がXRPLへ送信。false: SDK側でtx_blobをsubmit',
+                      ),
+                      value: _webSubmitByExtension,
+                      onChanged: (v) =>
+                          setState(() => _webSubmitByExtension = v),
+                    ),
+                    SwitchListTile(
+                      title: const Text(
+                        '署名前にアドレス整合チェック（verifyAddressBeforeSign）',
+                      ),
+                      subtitle: const Text(
+                        'true: 拡張から取得した現在アドレスとセッションアドレスの一致を検証',
+                      ),
+                      value: _verifyAddressBeforeSign,
+                      onChanged: (v) =>
+                          setState(() => _verifyAddressBeforeSign = v),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      child: Row(
+                        children: [
+                          const Text('Signing timeout (sec)'),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Slider(
+                              value: _signingTimeoutSeconds.toDouble(),
+                              min: 10,
+                              max: 120,
+                              divisions: 22,
+                              label: '${_signingTimeoutSeconds}s',
+                              onChanged: (v) => setState(
+                                () => _signingTimeoutSeconds = v.round(),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 60,
+                            child: Text(
+                              '${_signingTimeoutSeconds}s',
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
-            // 拡張からの情報読取（Webのみ）
-            if (kIsWeb)
+              // WalletConnect Proxy Base URL 入力欄
               Card(
                 elevation: 0,
                 child: Padding(
@@ -462,322 +592,273 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(child: Text('Crossmark Address: ${_addrCrossmark ?? '-'}')),
-                          Expanded(child: Text('GemWallet Address: ${_addrGemWallet ?? '-'}')),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text('Network: ${_network ?? '-'}'),
-                      const SizedBox(height: 4),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: OutlinedButton.icon(
-                          onPressed: _readExtensionInfo,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Read address/network'),
+                      const Text('WalletConnect Proxy Base URL (optional)'),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _wcProxyController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText:
+                              '例: http://localhost:53211/walletconnect/v1/',
+                          helperText:
+                              '末尾スラッシュ有無はどちらでも可。SDKが安全に連結します（Uri.resolve）。',
                         ),
-                      )
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('Xaman (XUMM) Proxy Base URL (optional)'),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _xamanProxyController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: '例: http://localhost:53211/xumm/v1/',
+                          helperText: '末尾スラッシュ有無はどちらでも可（Uri.resolve）。',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('JWT Bearer Token (開発用は dev-secret)'),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _jwtController,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: '例: dev-secret',
+                          helperText: 'Authorization: Bearer <token> として送信します。',
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-            // 設定フラグの切替UI
-            Card(
-              elevation: 0,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  SwitchListTile(
-                    title: const Text('拡張側でsubmitする（webSubmitByExtension）'),
-                    subtitle: const Text('true: 署名後に拡張がXRPLへ送信。false: SDK側でtx_blobをsubmit'),
-                    value: _webSubmitByExtension,
-                    onChanged: (v) => setState(() => _webSubmitByExtension = v),
+                  ElevatedButton.icon(
+                    onPressed: () => _connect(WalletProvider.crossmark),
+                    icon: const Icon(Icons.extension),
+                    label: const Text('Connect Crossmark'),
                   ),
-                  SwitchListTile(
-                    title: const Text('署名前にアドレス整合チェック（verifyAddressBeforeSign）'),
-                    subtitle: const Text('true: 拡張から取得した現在アドレスとセッションアドレスの一致を検証'),
-                    value: _verifyAddressBeforeSign,
-                    onChanged: (v) => setState(() => _verifyAddressBeforeSign = v),
+                  ElevatedButton.icon(
+                    onPressed: () => _connect(WalletProvider.gemwallet),
+                    icon: const Icon(Icons.diamond),
+                    label: const Text('Connect GemWallet'),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                    child: Row(
-                      children: [
-                        const Text('Signing timeout (sec)'),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Slider(
-                            value: _signingTimeoutSeconds.toDouble(),
-                            min: 10,
-                            max: 120,
-                            divisions: 22,
-                            label: '${_signingTimeoutSeconds}s',
-                            onChanged: (v) => setState(() => _signingTimeoutSeconds = v.round()),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 60,
-                          child: Text('${_signingTimeoutSeconds}s', textAlign: TextAlign.right),
-                        ),
-                      ],
-                    ),
+                  ElevatedButton.icon(
+                    onPressed: () => _connect(WalletProvider.walletconnect),
+                    icon: const Icon(Icons.link),
+                    label: const Text('Connect WalletConnect'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _connect(WalletProvider.xaman),
+                    icon: const Icon(Icons.qr_code),
+                    label: const Text('Connect Xaman (XUMM)'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _signSample,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry signing'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _cancel,
+                    icon: const Icon(Icons.cancel),
+                    label: const Text('Cancel Signing'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _signSample,
+                    icon: const Icon(Icons.send),
+                    label: const Text('Sign sample tx'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _clearLogs,
+                    icon: const Icon(Icons.clear_all),
+                    label: const Text('Clear logs'),
                   ),
                 ],
               ),
-            ),
-            // WalletConnect Proxy Base URL 入力欄
-            Card(
-              elevation: 0,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                const Text('WalletConnect Proxy Base URL (optional)'),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _wcProxyController,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                      hintText: '例: http://localhost:53211/walletconnect/v1/',
-                        helperText: '末尾スラッシュ有無はどちらでも可。SDKが安全に連結します（Uri.resolve）。',
+              const SizedBox(height: 12),
+              Text('Connected: ${_provider?.name ?? 'none'}'),
+              const SizedBox(height: 4),
+              Text('Session address: ${_sessionAddress ?? '-'}'),
+              const SizedBox(height: 8),
+              Card(
+                elevation: 0,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Status'),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(child: Text('opened: $_statusOpened')),
+                          Expanded(child: Text('signed: $_statusSigned')),
+                          Expanded(child: Text('rejected: $_statusRejected')),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Xaman (XUMM) Proxy Base URL (optional)'),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _xamanProxyController,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: '例: http://localhost:53211/xumm/v1/',
-                        helperText: '末尾スラッシュ有無はどちらでも可（Uri.resolve）。',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('JWT Bearer Token (開発用は dev-secret)'),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _jwtController,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: '例: dev-secret',
-                        helperText: 'Authorization: Bearer <token> として送信します。',
-                      ),
-                    ),
-                  ],
+                      if (_resultHash != null) Text('txHash: $_resultHash'),
+                      if (_lastError != null)
+                        Text(
+                          'error: $_lastError',
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              ElevatedButton.icon(
-                onPressed: () => _connect(WalletProvider.crossmark),
-                icon: const Icon(Icons.extension),
-                label: const Text('Connect Crossmark'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _connect(WalletProvider.gemwallet),
-                icon: const Icon(Icons.diamond),
-                label: const Text('Connect GemWallet'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _connect(WalletProvider.walletconnect),
-                icon: const Icon(Icons.link),
-                label: const Text('Connect WalletConnect'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _connect(WalletProvider.xaman),
-                icon: const Icon(Icons.qr_code),
-                label: const Text('Connect Xaman (XUMM)'),
-              ),
-              ElevatedButton.icon(
-                onPressed: _signSample,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry signing'),
-              ),
-              ElevatedButton.icon(
-                onPressed: _cancel,
-                icon: const Icon(Icons.cancel),
-                label: const Text('Cancel Signing'),
-              ),
-              ElevatedButton.icon(
-                onPressed: _signSample,
-                icon: const Icon(Icons.send),
-                label: const Text('Sign sample tx'),
-              ),
-              ElevatedButton.icon(
-                onPressed: _clearLogs,
-                icon: const Icon(Icons.clear_all),
-                label: const Text('Clear logs'),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            Text('Connected: ${_provider?.name ?? 'none'}'),
-            const SizedBox(height: 4),
-            Text('Session address: ${_sessionAddress ?? '-'}'),
-            const SizedBox(height: 8),
-            Card(
-              elevation: 0,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Status'),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(child: Text('opened: ${_statusOpened}')),
-                        Expanded(child: Text('signed: ${_statusSigned}')),
-                        Expanded(child: Text('rejected: ${_statusRejected}')),
-                      ],
-                    ),
-                    if (_resultHash != null) Text('txHash: $_resultHash'),
-                    if (_lastError != null) Text('error: $_lastError', style: const TextStyle(color: Colors.red)),
-                  ],
-                ),
-              ),
-            ),
-            if (_deepLink != null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.blueAccent),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text('DeepLink'),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: 'Copy',
-                          icon: const Icon(Icons.copy),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _deepLink!));
-                            ScaffoldMessenger.of(context)
-                              ..clearSnackBars()
-                              ..showSnackBar(
-                                const SnackBar(
-                                  content: Text('DeepLink copied'),
-                                  backgroundColor: Colors.green,
-                                  behavior: SnackBarBehavior.floating,
-                                  duration: Duration(milliseconds: 1200),
-                                ),
+              if (_deepLink != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.blueAccent),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('DeepLink'),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Copy',
+                            icon: const Icon(Icons.copy),
+                            onPressed: () {
+                              Clipboard.setData(
+                                ClipboardData(text: _deepLink!),
                               );
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            try {
-                              final u = Uri.parse(_deepLink!);
-                              final s = u.scheme.toLowerCase();
-                              final host = u.host.toLowerCase();
-                              if (s == 'https' && host == 'xumm.app') {
-                                html.window.open(_deepLink!, '_blank');
-                              } else if (s == 'http' || s == 'https') {
-                                html.window.open(_deepLink!, '_blank');
-                              } else {
-                                ScaffoldMessenger.of(context)
-                                  ..clearSnackBars()
-                                  ..showSnackBar(const SnackBar(
-                                    content: Text('Unsafe deep link scheme blocked'),
-                                    backgroundColor: Colors.red,
+                              ScaffoldMessenger.of(context)
+                                ..clearSnackBars()
+                                ..showSnackBar(
+                                  const SnackBar(
+                                    content: Text('DeepLink copied'),
+                                    backgroundColor: Colors.green,
                                     behavior: SnackBarBehavior.floating,
-                                    duration: Duration(milliseconds: 1600),
-                                  ));
-                              }
-                            } catch (_) {}
-                          },
-                          icon: const Icon(Icons.open_in_new),
-                          label: const Text('Open Xaman link'),
-                        ),
-                      ],
-                    ),
-                    SelectableText(_deepLink!),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Text('QR size'),
-                        Expanded(
-                          child: Slider(
-                            value: _qrSize,
-                            min: 120,
-                            max: 320,
-                            divisions: 10,
-                            label: '${_qrSize.toInt()}px',
-                            onChanged: (v) => setState(() => _qrSize = v),
+                                    duration: Duration(milliseconds: 1200),
+                                  ),
+                                );
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              try {
+                                final u = Uri.parse(_deepLink!);
+                                final s = u.scheme.toLowerCase();
+                                final host = u.host.toLowerCase();
+                                if (s == 'https' && host == 'xumm.app') {
+                                  html.window.open(_deepLink!, '_blank');
+                                } else if (s == 'http' || s == 'https') {
+                                  html.window.open(_deepLink!, '_blank');
+                                } else {
+                                  ScaffoldMessenger.of(context)
+                                    ..clearSnackBars()
+                                    ..showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Unsafe deep link scheme blocked',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                        behavior: SnackBarBehavior.floating,
+                                        duration: Duration(milliseconds: 1600),
+                                      ),
+                                    );
+                                }
+                              } catch (_) {}
+                            },
+                            icon: const Icon(Icons.open_in_new),
+                            label: const Text('Open Xaman link'),
+                          ),
+                        ],
+                      ),
+                      SelectableText(_deepLink!),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('QR size'),
+                          Expanded(
+                            child: Slider(
+                              value: _qrSize,
+                              min: 120,
+                              max: 320,
+                              divisions: 10,
+                              label: '${_qrSize.toInt()}px',
+                              onChanged: (v) => setState(() => _qrSize = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(
+                        height: _qrSize,
+                        width: _qrSize,
+                        child: RepaintBoundary(
+                          child: QrImageView(
+                            data: _deepLink!,
+                            version: QrVersions.auto,
+                            gapless: true,
+                            backgroundColor: Colors.transparent,
                           ),
                         ),
-                      ],
-                    ),
-                    SizedBox(
-                      height: _qrSize,
-                      width: _qrSize,
-                      child: RepaintBoundary(
-                        child: QrImageView(
-                          data: _deepLink!,
-                          version: QrVersions.auto,
-                          gapless: true,
-                          backgroundColor: Colors.transparent,
-                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              if (_deepLink == null && _qrUrl != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.orangeAccent),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('QR Image URL (from proxy)'),
+                      const SizedBox(height: 6),
+                      SelectableText(_qrUrl!),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: _qrSize,
+                        width: _qrSize,
+                        child: (() {
+                          try {
+                            final u = Uri.parse(_qrUrl!);
+                            final s = u.scheme.toLowerCase();
+                            if (s == 'http' || s == 'https') {
+                              return Image.network(
+                                _qrUrl!,
+                                cacheWidth: _qrSize.toInt(),
+                                cacheHeight: _qrSize.toInt(),
+                                filterQuality: FilterQuality.low,
+                                errorBuilder: (c, e, s) => const Center(
+                                  child: Text('Failed to load image'),
+                                ),
+                              );
+                            }
+                          } catch (_) {}
+                          return const Center(
+                            child: Text('Blocked non-HTTP(S) image URL'),
+                          );
+                        })(),
+                      ),
+                    ],
+                  ),
+                ),
+              // フィルタチップ群
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: SignProgressState.values.map((s) {
+                  return FilterChip(
+                    label: Text(s.name),
+                    selected: _filterEnabled[s] ?? true,
+                    onSelected: (v) => setState(() => _filterEnabled[s] = v),
+                  );
+                }).toList(),
               ),
-            if (_deepLink == null && _qrUrl != null)
-              Container(
-                margin: const EdgeInsets.only(top: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.orangeAccent),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('QR Image URL (from proxy)'),
-                    const SizedBox(height: 6),
-                    SelectableText(_qrUrl!),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: _qrSize,
-                      width: _qrSize,
-                      child: (() {
-                        try {
-                          final u = Uri.parse(_qrUrl!);
-                          final s = u.scheme.toLowerCase();
-                          if (s == 'http' || s == 'https') {
-                            return Image.network(
-                              _qrUrl!,
-                              cacheWidth: _qrSize.toInt(),
-                              cacheHeight: _qrSize.toInt(),
-                              filterQuality: FilterQuality.low,
-                              errorBuilder: (c, e, s) => const Center(child: Text('Failed to load image')),
-                            );
-                          }
-                        } catch (_) {}
-                        return const Center(child: Text('Blocked non-HTTP(S) image URL'));
-                      })(),
-                    ),
-                  ],
-                ),
-              ),
-            // フィルタチップ群
-            Wrap(spacing: 6, runSpacing: 6, children: SignProgressState.values.map((s) {
-              return FilterChip(
-                label: Text(s.name),
-                selected: _filterEnabled[s] ?? true,
-                onSelected: (v) => setState(() => _filterEnabled[s] = v),
-              );
-            }).toList()),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
             ],
           );
 
@@ -812,7 +893,10 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(flex: 6, child: SingleChildScrollView(child: leftColumn)),
+                  Expanded(
+                    flex: 6,
+                    child: SingleChildScrollView(child: leftColumn),
+                  ),
                   const SizedBox(width: 16),
                   Expanded(flex: 5, child: rightColumn),
                 ],
@@ -825,11 +909,7 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  leftColumn,
-                  const SizedBox(height: 12),
-                  rightColumn,
-                ],
+                children: [leftColumn, const SizedBox(height: 12), rightColumn],
               ),
             ),
           );
@@ -861,8 +941,12 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
 
   // ログパネル（右カラム用／1カラム時は下部）
   Widget _buildLogPanel(BuildContext context, bool isWide) {
-    final filtered = _events.where((e) => _filterEnabled[e.state] ?? true).toList();
-    final double logHeight = isWide ? MediaQuery.of(context).size.height * 0.6 : 380.0;
+    final filtered = _events
+        .where((e) => _filterEnabled[e.state] ?? true)
+        .toList();
+    final double logHeight = isWide
+        ? MediaQuery.of(context).size.height * 0.6
+        : 380.0;
     return Container(
       height: logHeight,
       decoration: BoxDecoration(
@@ -878,7 +962,9 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
           return ListTile(
             leading: Icon(_iconForState(e.state)),
             title: Text(e.state.name),
-            subtitle: Text([e.message, ts].where((x) => (x ?? '').isNotEmpty).join(' | ')),
+            subtitle: Text(
+              [e.message, ts].where((x) => (x ?? '').isNotEmpty).join(' | '),
+            ),
             trailing: e.txHash != null ? Text(e.txHash!) : null,
           );
         },

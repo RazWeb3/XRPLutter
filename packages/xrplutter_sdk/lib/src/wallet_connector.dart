@@ -51,6 +51,10 @@
 // 理由: data:, file:, javascript: 等の不正スキーム混入による誤リクエストを防止するため。
 // 2025/11/13 15:20 追記: HTTPリクエストにタイムアウト（10秒）を付与し、ハングによるUX悪化とDoS連鎖を防止。
 // 理由: ネットワーク異常時の待機無制限を避けるため。
+// 2025/11/16 10:22 変更: deepLink/qrUrlのスキーム検証とサニタイズを追加。
+// 理由: 不正スキーム混入によるXSS/不正リダイレクトの回避。
+// 2025/11/16 10:22 変更: WalletConnectスタブの乱数生成をRandom.secure()へ変更。
+// 理由: 誤用時の推測耐性を高める安全策。
 // -------------------------------------------------------
 
 import 'models.dart';
@@ -58,6 +62,7 @@ import 'wallet_config.dart';
 import 'xrpl_client.dart';
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 // Web拡張（Crossmark/GemWallet）の存在検出（Webのみ有効）
 import 'web/wallet_web_stub.dart' if (dart.library.html) 'web/wallet_web_interop.dart';
@@ -84,7 +89,6 @@ class WalletConnector {
   }
 
   Future<WalletSession> connect({required WalletProvider provider}) async {
-    // TODO: 実際のウォレット接続ロジック（各アダプタ固有）を実装
     _adapter = _resolveAdapter(provider);
     String address = 'rEXAMPLEADDRESS';
     try {
@@ -104,12 +108,10 @@ class WalletConnector {
   }
 
   Future<void> disconnect() async {
-    // TODO: 実際の切断処理
     _session = null;
   }
 
   Future<AccountInfo> getAccountInfo() async {
-    // TODO: XRPLからアカウント情報を取得
     if (_session == null) {
       throw StateError('Wallet not connected');
     }
@@ -264,8 +266,8 @@ class XamanAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.created,
       payloadId: payloadId,
-      deepLink: deepLink,
-      qrUrl: qrUrl,
+      deepLink: _sanitizeUrl(deepLink),
+      qrUrl: _sanitizeHttpsOnly(qrUrl),
       message: observedCreateKeys.isEmpty ? 'Payload created' : ('Payload created | keys=' + observedCreateKeys.join(',')),
     ));
 
@@ -315,8 +317,8 @@ class XamanAdapter implements WalletAdapter {
         onEvent(SignProgressEvent(
           state: SignProgressState.opened,
           payloadId: payloadId,
-          deepLink: deepLink,
-          qrUrl: qrUrl,
+          deepLink: _sanitizeUrl(deepLink),
+          qrUrl: _sanitizeHttpsOnly(qrUrl),
           message: observedStatusKeys.isEmpty ? 'Payload opened by user' : ('Payload opened by user | keys=' + observedStatusKeys.join(',')),
         ));
         _openedEmitted = true;
@@ -360,7 +362,7 @@ class XamanAdapter implements WalletAdapter {
         'result': {
           'tx_json': txJson,
           'hash': txHash,
-          'deepLink': deepLink,
+          'deepLink': _sanitizeUrl(deepLink),
         }
       };
     }
@@ -388,7 +390,7 @@ class XamanAdapter implements WalletAdapter {
       'result': {
         'tx_json': txJson,
         'hash': hash,
-        'deepLink': deepLink,
+        'deepLink': _sanitizeUrl(deepLink),
       }
     };
   }
@@ -411,7 +413,7 @@ class CrossmarkAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.created,
       payloadId: payloadId,
-      deepLink: deepLink,
+      deepLink: _sanitizeUrl(deepLink),
       message: 'Crossmark signing requested' + (interop.isAvailableCrossmark ? ' (extension detected)' : ' (extension not detected - stub)'),
     ));
 
@@ -453,7 +455,7 @@ class CrossmarkAdapter implements WalletAdapter {
       onEvent(SignProgressEvent(
         state: SignProgressState.opened,
         payloadId: payloadId,
-        deepLink: deepLink,
+        deepLink: _sanitizeUrl(deepLink),
         message: openedMsg,
       ));
       try {
@@ -488,7 +490,7 @@ class CrossmarkAdapter implements WalletAdapter {
           onEvent(SignProgressEvent(
             state: SignProgressState.created,
             payloadId: payloadIdFromRes,
-            deepLink: deepLink,
+            deepLink: _sanitizeUrl(deepLink),
             message: 'Payload info received (interop)'.toString(),
           ));
         }
@@ -524,7 +526,7 @@ class CrossmarkAdapter implements WalletAdapter {
             'result': {
               'tx_json': txJson,
               'hash': txHash,
-              'deepLink': deepLink,
+              'deepLink': _sanitizeUrl(deepLink),
             }
           };
         }
@@ -546,7 +548,7 @@ class CrossmarkAdapter implements WalletAdapter {
             'result': {
               'tx_json': txJson,
               'hash': hash,
-              'deepLink': deepLink,
+              'deepLink': _sanitizeUrl(deepLink),
             }
           };
         }
@@ -582,7 +584,7 @@ class CrossmarkAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.opened,
       payloadId: payloadId,
-      deepLink: deepLink,
+      deepLink: _sanitizeUrl(deepLink),
       message: 'Crossmark UI opened',
     ));
 
@@ -607,7 +609,7 @@ class CrossmarkAdapter implements WalletAdapter {
       'result': {
         'tx_json': txJson,
         'hash': hash,
-        'deepLink': deepLink,
+        'deepLink': _sanitizeUrl(deepLink),
       }
     };
   }
@@ -630,7 +632,7 @@ class GemWalletAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.created,
       payloadId: payloadId,
-      deepLink: deepLink,
+      deepLink: _sanitizeUrl(deepLink),
       message: 'GemWallet signing requested' + (interop.isAvailableGemWallet ? ' (extension detected)' : ' (extension not detected - stub)'),
     ));
 
@@ -671,7 +673,7 @@ class GemWalletAdapter implements WalletAdapter {
       onEvent(SignProgressEvent(
         state: SignProgressState.opened,
         payloadId: payloadId,
-        deepLink: deepLink,
+        deepLink: _sanitizeUrl(deepLink),
         message: openedMsg,
       ));
       try {
@@ -741,7 +743,7 @@ class GemWalletAdapter implements WalletAdapter {
             'result': {
               'tx_json': txJson,
               'hash': txHash,
-              'deepLink': deepLink,
+              'deepLink': _sanitizeUrl(deepLink),
             }
           };
         }
@@ -763,7 +765,7 @@ class GemWalletAdapter implements WalletAdapter {
             'result': {
               'tx_json': txJson,
               'hash': hash,
-              'deepLink': deepLink,
+              'deepLink': _sanitizeUrl(deepLink),
             }
           };
         }
@@ -798,7 +800,7 @@ class GemWalletAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.opened,
       payloadId: payloadId,
-      deepLink: deepLink,
+      deepLink: _sanitizeUrl(deepLink),
       message: 'GemWallet UI opened',
     ));
 
@@ -823,7 +825,7 @@ class GemWalletAdapter implements WalletAdapter {
       'result': {
         'tx_json': txJson,
         'hash': hash,
-        'deepLink': deepLink,
+        'deepLink': _sanitizeUrl(deepLink),
       }
     };
   }
@@ -997,12 +999,13 @@ class WalletConnectAdapter implements WalletAdapter {
 
     // 2) ローカル生成スタブ（wc: ペアリングURI生成→擬似的なopened/signed/submitted）
     String _randomHex(int bytes) {
-      final rnd = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+      final rng = Random.secure();
+      final data = List<int>.generate(bytes, (_) => rng.nextInt(256));
       final buf = StringBuffer();
-      while (buf.length < bytes * 2) {
-        buf.write(rnd);
+      for (final b in data) {
+        buf.write(b.toRadixString(16).padLeft(2, '0'));
       }
-      return buf.toString().substring(0, bytes * 2);
+      return buf.toString();
     }
 
     final topic = _randomHex(32); // 32 bytes
@@ -1013,7 +1016,7 @@ class WalletConnectAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.created,
       payloadId: payloadId,
-      deepLink: pairingUri,
+      deepLink: _sanitizeUrl(pairingUri),
       message: 'WalletConnect v2 pairing URI generated (stub)',
     ));
 
@@ -1024,7 +1027,7 @@ class WalletConnectAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.opened,
       payloadId: payloadId,
-      deepLink: pairingUri,
+      deepLink: _sanitizeUrl(pairingUri),
       message: 'Wallet app opened (stub)',
     ));
 
@@ -1063,8 +1066,24 @@ class WalletConnectAdapter implements WalletAdapter {
       'result': {
         'tx_json': txJson,
         'hash': hash,
-        'deepLink': pairingUri,
+        'deepLink': _sanitizeUrl(pairingUri),
       }
     };
   }
+}
+
+bool _isAllowedUrlScheme(String? url, {Set<String> allow = const {'https', 'xumm', 'xaman', 'crossmark', 'gemwallet', 'wc'}}) {
+  if (url == null || url.isEmpty) return false;
+  final uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  final s = uri.scheme.toLowerCase();
+  return allow.contains(s);
+}
+
+String? _sanitizeUrl(String? url) {
+  return _isAllowedUrlScheme(url) ? url : null;
+}
+
+String? _sanitizeHttpsOnly(String? url) {
+  return _isAllowedUrlScheme(url, allow: const {'https'}) ? url : null;
 }

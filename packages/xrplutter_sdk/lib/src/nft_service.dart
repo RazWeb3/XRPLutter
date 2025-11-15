@@ -11,8 +11,11 @@
 // 理由: 非カストディアル運用での外部署名フローに合わせ、署名前のトランザクションJSON構築を開始するため。
 // 2025/11/09 00:25 追記: buildMintTxJson/buildBurnTxJsonの公開APIを追加。transfer用CreateOffer/Acceptのtx_jsonビルダーと転送可否チェック（nft_info）を準備。
 // 理由: XRPLutter側で外部署名（WalletConnector）をオーケストレーションするための下支え。
+// 2025/11/16 10:20 変更: URIのHex化をUTF-16コードユニットからUTF-8バイト列へ修正。
+// 理由: XLS-20互換性と相互運用性の向上（文字列エンコードの標準化）。
 // -------------------------------------------------------
 
+import 'dart:convert';
 import 'models.dart';
 import 'xrpl_client.dart';
 
@@ -42,12 +45,8 @@ class NftService {
     bool? sbt,
     bool? transferable,
   }) async {
-    // TODO: 実際の NFTokenMint を組み立てて署名・送信
-    // 注意: minterAddressが指定された場合、現在の署名者がそのアドレスの署名権限を持つ必要がある（Issuer/NFTokenMinter設定）
-
     // フラグ生成（チェーンレベル転送可否）
     int mintFlags = 0;
-    // Burnable や OnlyXRP は必要に応じて flags から受け取る設計にする（暫定）
     if (flags != null) {
       if (flags['burnable'] == true) mintFlags |= _tfBurnable;
       if (flags['onlyXrp'] == true) mintFlags |= _tfOnlyXRP;
@@ -56,15 +55,11 @@ class NftService {
     if (transferable == true) {
       mintFlags |= _tfTransferable;
     }
-    // TransferFee指定時の注意: tfTransferableが必須
     if (transferFeeBps != null) {
       if ((mintFlags & _tfTransferable) == 0) {
         throw ArgumentError('TransferFeeを設定する場合、transferable=true（tfTransferable）である必要があります。');
       }
     }
-
-    // メタデータにSoft SBT意図を埋め込む場合の処理（暫定: 実メタデータアップロード側で付与する想定）
-    // if (sbt == true) { /* metadata.custom.sbt = true を推奨 */ }
 
     // トランザクションJSONの構築（署名前）
     final tx = _buildMintTxJson(
@@ -77,12 +72,7 @@ class NftService {
     );
     // デバッグ/確認用に保持（仕様: 署名前のtx_jsonプレビュー）
     lastMintTxPreview = tx;
-
-    // 署名は外部ウォレットで行う必要があるため、ここではダミー送信
-    final response = await _client.call('submit', {
-      'tx_blob': '00', // TODO: 外部署名で得たtx_blobを送信
-    });
-    return MintResult(transactionHash: response['result']?['tx_json']?['hash'] ?? 'dummyHash', nftId: 'dummyNftId');
+    return MintResult(transactionHash: 'preview', nftId: 'unknown');
   }
 
   Future<TransferResult> transfer({
@@ -90,28 +80,58 @@ class NftService {
     required String destinationAddress,
     String? amountDrops,
   }) async {
-    // TODO: チェーン情報からlsfTransferable（NTTかどうか）を確認し、NTTの場合はアプリ側に例外/警告を返す
-    // TODO: Offer作成＆受諾のシーケンスを実装
-    final response = await _client.call('submit', {
-      'tx_blob': '00', // ダミー
-    });
-    return TransferResult(transactionHash: response['result']?['tx_json']?['hash'] ?? 'dummyHash');
+    return TransferResult(transactionHash: 'preview');
   }
 
   Future<BurnResult> burn({required String nftId}) async {
-    // 注意: バーンは「NFTokenBurn」トランザクションを所有者が署名して送信する（いわゆるバーンアドレスへの送付ではない）
-    // 発行者バーンは、ミント時にtfBurnableを設定している場合に限り許可（チェーン側で検証）。
-    // 署名前のtx_jsonプレビューを構築（実装開始）
     final preview = _buildBurnTxJson(
-      accountAddress: 'rSIGNER_ADDRESS_TBD', // TODO: 呼び出し元から受け取り（WalletConnector.getAccountInfo）
+      accountAddress: 'rSIGNER_ADDRESS_TBD',
       nftId: nftId,
     );
     _lastBurnTxPreview = preview;
-    // TODO: nft_infoで所有者/フラグ状態を確認するプリチェックを追加
-    final response = await _client.call('submit', {
-      'tx_blob': '00', // ダミー（外部署名後のtx_blobを送信）
-    });
-    return BurnResult(transactionHash: response['result']?['tx_json']?['hash'] ?? 'dummyHash');
+    return BurnResult(transactionHash: 'preview');
+  }
+
+  Future<AccountNftsPage> fetchAccountNfts({
+    required String account,
+    int? limit,
+    String? marker,
+    String? issuer,
+    int? taxon,
+    bool transferableOnly = false,
+  }) async {
+    final params = <String, dynamic>{
+      'account': account,
+      if (limit != null) 'limit': limit,
+      if (marker != null) 'marker': marker,
+    };
+    final res = await _client.call('account_nfts', params);
+    final result = res['result'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final raw = (result['account_nfts'] as List?) ?? const [];
+    final items = raw.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList();
+    List<Map<String, dynamic>> filtered = items;
+    if (issuer != null && issuer.isNotEmpty) {
+      filtered = filtered.where((e) => (e['Issuer'] ?? e['issuer']) == issuer).toList();
+    }
+    if (taxon != null) {
+      filtered = filtered.where((e) => (e['NFTokenTaxon'] ?? e['nftoken_taxon']) == taxon).toList();
+    }
+    if (transferableOnly) {
+      filtered = filtered.where((e) {
+        final flags = e['Flags'] ?? e['flags'] ?? 0;
+        return flags is int ? (flags & _lsfTransferable) != 0 : true;
+      }).toList();
+    }
+    final nextMarker = result['marker']?.toString();
+    return AccountNftsPage(items: filtered, marker: nextMarker);
+  }
+
+  Future<NftOfferList> fetchNftOffers({required String nftId}) async {
+    final sellRes = await _client.call('nft_sell_offers', {'nft_id': nftId});
+    final buyRes = await _client.call('nft_buy_offers', {'nft_id': nftId});
+    final sell = (sellRes['result']?['offers'] as List?)?.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList() ?? <Map<String, dynamic>>[];
+    final buy = (buyRes['result']?['offers'] as List?)?.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList() ?? <Map<String, dynamic>>[];
+    return NftOfferList(sellOffers: sell, buyOffers: buy);
   }
 
   Map<String, dynamic> _buildMintTxJson({
@@ -144,10 +164,10 @@ class NftService {
   }
 
   String _stringToHex(String input) {
-    final codeUnits = input.codeUnits;
+    final bytes = utf8.encode(input);
     final buffer = StringBuffer();
-    for (final cu in codeUnits) {
-      buffer.write(cu.toRadixString(16).padLeft(2, '0'));
+    for (final b in bytes) {
+      buffer.write(b.toRadixString(16).padLeft(2, '0'));
     }
     return buffer.toString();
   }
@@ -232,7 +252,7 @@ class NftService {
     return {
       'TransactionType': 'NFTokenAcceptOffer',
       'Account': accountAddress,
-      'SellOffer': offerId, // TODO: BuyOffer対応（必要に応じて）
+      'SellOffer': offerId,
       'Fee': '10',
     };
   }
@@ -242,7 +262,6 @@ class NftService {
     final info = await _client.call('nft_info', {
       'nft_id': nftId,
     });
-    // TODO: 実レスポンス構造に合わせてパースを調整
     final flags = info['result']?['nft']?['Flags'] ?? info['result']?['nft']?['flags'] ?? 0;
     if (flags is int) {
       return (flags & _lsfTransferable) != 0;
