@@ -127,8 +127,12 @@ class NftService {
   }
 
   Future<NftOfferList> fetchNftOffers({required String nftId}) async {
-    final sellRes = await _client.call('nft_sell_offers', {'nft_id': nftId});
-    final buyRes = await _client.call('nft_buy_offers', {'nft_id': nftId});
+    final results = await Future.wait<Map<String, dynamic>>([
+      _client.call('nft_sell_offers', {'nft_id': nftId}).catchError((_) => {'result': {'offers': []}}),
+      _client.call('nft_buy_offers', {'nft_id': nftId}).catchError((_) => {'result': {'offers': []}}),
+    ]);
+    final sellRes = results[0];
+    final buyRes = results[1];
     final sell = (sellRes['result']?['offers'] as List?)?.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList() ?? <Map<String, dynamic>>[];
     final buy = (buyRes['result']?['offers'] as List?)?.map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e as Map)).toList() ?? <Map<String, dynamic>>[];
     return NftOfferList(sellOffers: sell, buyOffers: buy);

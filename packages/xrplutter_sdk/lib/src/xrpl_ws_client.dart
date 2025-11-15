@@ -17,6 +17,8 @@ class XRPLWebSocketClient {
   final String _endpoint;
   WebSocket? _socket;
   final StreamController<Map<String, dynamic>> _events = StreamController.broadcast();
+  final List<Map<String, dynamic>> _subscriptions = [];
+  int _reconnectAttempt = 0;
 
   Stream<Map<String, dynamic>> get events => _events.stream;
 
@@ -40,20 +42,25 @@ class XRPLWebSocketClient {
       }
     }, onDone: () {
       _socket = null;
+      _scheduleReconnect();
     }, onError: (e) {
       _socket = null;
+      _events.add({'type': 'error', 'message': 'ws_error'});
+      _scheduleReconnect();
     });
   }
 
   Future<void> disconnect() async {
     await _socket?.close();
     _socket = null;
+    _reconnectAttempt = 0;
   }
 
   Future<void> subscribe(Map<String, dynamic> request) async {
     if (_socket == null) {
       await connect();
     }
+    _subscriptions.add(request);
     final body = jsonEncode(request);
     _socket!.add(body);
   }
@@ -70,6 +77,26 @@ class XRPLWebSocketClient {
     return subscribe({
       'command': 'subscribe',
       'streams': ['ledger'],
+    });
+  }
+
+  void _scheduleReconnect() {
+    final baseMs = 500 * (1 << (_reconnectAttempt.clamp(0, 5)));
+    final jitterMs = ((baseMs * 0.2) * ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000)).round();
+    final wait = Duration(milliseconds: baseMs + jitterMs);
+    Timer(wait, () async {
+      try {
+        await connect();
+        for (final req in _subscriptions) {
+          try {
+            _socket?.add(jsonEncode(req));
+          } catch (_) {}
+        }
+        _reconnectAttempt = 0;
+      } catch (_) {
+        _reconnectAttempt++;
+        _scheduleReconnect();
+      }
     });
   }
 }

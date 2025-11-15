@@ -285,6 +285,7 @@ class XamanAdapter implements WalletAdapter {
     final deadline = DateTime.now().add(config.signingTimeout);
     Map<String, dynamic>? statusJson;
     bool _openedEmitted = false;
+    int _attempt = 0;
     while (DateTime.now().isBefore(deadline)) {
       if (cancelToken.canceled) {
         throw StateError('SignCanceled');
@@ -298,7 +299,10 @@ class XamanAdapter implements WalletAdapter {
           )
               .timeout(const Duration(seconds: 10));
       if (statusRes.statusCode != 200) {
-        await Future.delayed(config.pollingInterval);
+        final baseMs = config.pollingInterval.inMilliseconds * (1 << (_attempt.clamp(0, 4)));
+        final jitterMs = ((baseMs * 0.2) * ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000)).round();
+        await Future.delayed(Duration(milliseconds: baseMs + jitterMs));
+        _attempt++;
         continue;
       }
       statusJson = jsonDecode(statusRes.body) as Map<String, dynamic>;
@@ -332,7 +336,10 @@ class XamanAdapter implements WalletAdapter {
         ));
         throw StateError('SignRejected by user');
       }
-      await Future.delayed(config.pollingInterval);
+      final baseMs = config.pollingInterval.inMilliseconds * (1 << (_attempt.clamp(0, 3)));
+      final jitterMs = ((baseMs * 0.2) * ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000)).round();
+      await Future.delayed(Duration(milliseconds: baseMs + jitterMs));
+      _attempt++;
     }
 
     if (statusJson == null) {
@@ -881,14 +888,15 @@ class WalletConnectAdapter implements WalletAdapter {
         onEvent(SignProgressEvent(
           state: SignProgressState.created,
           payloadId: payloadId,
-          deepLink: deepLink,
-          qrUrl: qrUrl,
+          deepLink: _sanitizeUrl(deepLink),
+          qrUrl: _sanitizeHttpsOnly(qrUrl),
           message: 'WalletConnect pairing created by proxy',
         ));
 
         // ステータス取得をポーリング
         final deadline = DateTime.now().add(config.signingTimeout);
         Map<String, dynamic>? statusJson;
+        int _attempt = 0;
         while (DateTime.now().isBefore(deadline)) {
           if (cancelToken.canceled) {
             throw StateError('SignCanceled');
@@ -902,7 +910,10 @@ class WalletConnectAdapter implements WalletAdapter {
           )
               .timeout(const Duration(seconds: 10));
           if (statusRes.statusCode != 200) {
-            await Future.delayed(config.pollingInterval);
+            final baseMs = config.pollingInterval.inMilliseconds * (1 << (_attempt.clamp(0, 4)));
+            final jitterMs = ((baseMs * 0.2) * ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000)).round();
+            await Future.delayed(Duration(milliseconds: baseMs + jitterMs));
+            _attempt++;
             continue;
           }
           statusJson = jsonDecode(statusRes.body) as Map<String, dynamic>;
@@ -914,8 +925,8 @@ class WalletConnectAdapter implements WalletAdapter {
             onEvent(SignProgressEvent(
               state: SignProgressState.opened,
               payloadId: payloadId,
-              deepLink: deepLink,
-              qrUrl: qrUrl,
+              deepLink: _sanitizeUrl(deepLink),
+              qrUrl: _sanitizeHttpsOnly(qrUrl),
               message: 'Wallet opened via proxy',
             ));
           }
@@ -928,7 +939,10 @@ class WalletConnectAdapter implements WalletAdapter {
             ));
             throw StateError('SignRejected by user');
           }
-          await Future.delayed(config.pollingInterval);
+          final baseMs = config.pollingInterval.inMilliseconds * (1 << (_attempt.clamp(0, 3)));
+          final jitterMs = ((baseMs * 0.2) * ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000)).round();
+          await Future.delayed(Duration(milliseconds: baseMs + jitterMs));
+          _attempt++;
         }
 
         if (statusJson == null) {

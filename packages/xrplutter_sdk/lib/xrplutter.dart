@@ -38,10 +38,14 @@ export 'src/xrpl_client.dart';
 export 'src/xrpl_ws_client.dart';
 
 class XRPLutter {
-  XRPLutter({WalletConnector? walletConnector, NftService? nftService, XRPLClient? client})
-      : _client = client ?? XRPLClient(),
-        _wallet = walletConnector ?? WalletConnector(client: client ?? XRPLClient()),
-        _nft = nftService ?? NftService(client: client ?? XRPLClient());
+  factory XRPLutter({WalletConnector? walletConnector, NftService? nftService, XRPLClient? client}) {
+    final c = client ?? XRPLClient();
+    final w = walletConnector ?? WalletConnector(client: c);
+    final n = nftService ?? NftService(client: c);
+    return XRPLutter._(c, w, n);
+  }
+
+  XRPLutter._(this._client, this._wallet, this._nft);
 
   final XRPLClient _client;
   final WalletConnector _wallet;
