@@ -13,6 +13,8 @@
 // 理由: XRPLutter側で外部署名（WalletConnector）をオーケストレーションするための下支え。
 // 2025/11/16 10:20 変更: URIのHex化をUTF-16コードユニットからUTF-8バイト列へ修正。
 // 理由: XLS-20互換性と相互運用性の向上（文字列エンコードの標準化）。
+// 2025/11/16 13:05 変更: 発行者バーン対応のため、buildBurnTxJson/burn/_buildBurnTxJsonにownerAddressオプションを追加（NFTokenBurn.Owner）。
+// 理由: tfBurnable設定済みNFTに対する発行者/認可ミンターのバーン機能をSDKビルダーで扱えるようにするため。
 // -------------------------------------------------------
 
 import 'dart:convert';
@@ -83,10 +85,11 @@ class NftService {
     return TransferResult(transactionHash: 'preview');
   }
 
-  Future<BurnResult> burn({required String nftId}) async {
+  Future<BurnResult> burn({required String nftId, String? ownerAddress}) async {
     final preview = _buildBurnTxJson(
       accountAddress: 'rSIGNER_ADDRESS_TBD',
       nftId: nftId,
+      ownerAddress: ownerAddress,
     );
     _lastBurnTxPreview = preview;
     return BurnResult(transactionHash: 'preview');
@@ -219,6 +222,7 @@ class NftService {
   Map<String, dynamic> buildBurnTxJson({
     required String accountAddress,
     required String nftId,
+    String? ownerAddress,
   }) {
     final tx = {
       'TransactionType': 'NFTokenBurn',
@@ -226,6 +230,9 @@ class NftService {
       'NFTokenID': nftId,
       'Fee': '10',
     };
+    if (ownerAddress != null && ownerAddress.isNotEmpty) {
+      tx['Owner'] = ownerAddress;
+    }
     _lastBurnTxPreview = tx;
     return tx;
   }
@@ -280,11 +287,13 @@ class NftService {
   Map<String, dynamic> _buildBurnTxJson({
     required String accountAddress,
     required String nftId,
+    String? ownerAddress,
   }) {
     return {
       'TransactionType': 'NFTokenBurn',
       'Account': accountAddress,
       'NFTokenID': nftId,
+      if (ownerAddress != null && ownerAddress.isNotEmpty) 'Owner': ownerAddress,
       'Fee': '10',
     };
   }

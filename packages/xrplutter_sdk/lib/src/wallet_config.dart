@@ -7,6 +7,8 @@
 // 理由: クリエイターが使いたいウォレットだけ個別URLを設定できるBYOS設計を明確化するため。
 // 2025/11/09 15:45 追記: Web拡張の送信方式制御（webSubmitByExtension）と署名前のアドレス整合チェック（verifyAddressBeforeSign）を追加。
 // 理由: 実拡張の仕様差（拡張側送信かSDK側送信か）に柔軟対応し、事前のアカウント一致検証を任意で行えるようにするため。
+// 2025/11/16 13:15 追記: 観測キーのログ出力制御（logObservedKeys）を追加。HTTPタイムアウトは構成値（httpTimeout）を統一使用。
+// 理由: 高頻度ポーリング時の軽量化と運用制御を可能にするため。
 // -------------------------------------------------------
 
 class WalletConnectorConfig {
@@ -21,6 +23,8 @@ class WalletConnectorConfig {
     this.httpTimeout = const Duration(seconds: 10),
     this.webSubmitByExtension = true,
     this.verifyAddressBeforeSign = false,
+    this.disallowPrivateProxyHosts = false,
+    this.logObservedKeys = true,
   });
 
   /// Xaman/XUMM連携用のバックエンドプロキシのベースURL
@@ -55,4 +59,12 @@ class WalletConnectorConfig {
   /// - true: 不一致なら SignProgressState.error を通知して中断
   /// - false: 検証をスキップ（拡張がアドレス取得を提供しない場合や、複数アカウント運用時に有効）
   final bool verifyAddressBeforeSign;
+
+  /// プライベート/リンクローカルなプロキシホストを拒否するか（10.x, 192.168.x, 172.16-31.x, 169.254.x, localhost, 127.0.0.1）
+  /// - false: 開発用途で許可（既定）
+  /// - true: 本番想定で拒否（安全性向上）
+  final bool disallowPrivateProxyHosts;
+
+  /// ステータス/詳細の観測キー（keys=）ログ出力を有効にするか（既定true）
+  final bool logObservedKeys;
 }

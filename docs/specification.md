@@ -43,6 +43,20 @@
 理由: SDK公開後に迷わず本番フローを構築できるよう手順を整備。
 2025/11/13 21:10 追記: JWT必須化と短寿命exp検証、URLスキーム検証（http/httpsのみ）、進捗イベントopenedの重複抑制、例外型一覧（概念）を明記。
 理由: 提出前の最終仕上げとして、安定性とセキュリティ、ドキュメント整合性を高めるため。
+2025/11/16 12:30 変更: XamanフローのSignIn対応を仕様へ反映。送信を伴わない署名時は`payload/details/{payloadId}`から`response.account`等を抽出してアドレス確定し、進捗`signed | account=`を出力、戻り値へ`result.account`を含める。
+理由: Xaman/BYOS差異により`txHash/tx_blob`が存在しないケースでアドレス未確定となる問題の解消と診断性向上。
+2025/11/16 12:31 変更: ステータスからのアカウント抽出順序（`status.account → status.response.account → status.meta.account`）を仕様に明記。検出時は`session.address`へ反映し、進捗`signed`に`account=`を出力する。
+理由: 環境差でトップレベルに`account`が存在しないケースへの耐性強化。
+2025/11/16 12:32 変更: ペイロード作成失敗時の進捗通知（`SignProgressState.error`で`Create failed: HTTP ...`または`Create request failed: ...`）を仕様へ追加。
+理由: 作成失敗時にUIが待機継続しないよう明確化。
+2025/11/16 12:35 変更: バーン仕様の誤記を修正。所有者は常時バーン可能、発行者/認可ミンターはミント時`tfBurnable`設定済みのNFTに限り`Owner`指定でバーン可能。SDKの`buildBurnTxJson`は現状所有者向け（`Owner`未指定）であり、将来`ownerAddress`オプションを追加して発行者バーンをサポート予定。
+理由: XRPL公式仕様（NFTokenBurn/lsfBurnable）へ整合。
+2025/11/16 12:50 追記: WalletConnectorConfigに`disallowPrivateProxyHosts`を追加し、プライベート/リンクローカルホスト（10.x/192.168.x/172.16–31.x/169.254.x/localhost/127.0.0.1）を拒否可能（既定false）。
+理由: SSRF耐性・本番運用の安全性向上のため。
+2025/11/16 12:51 変更: WalletConnectの返却オブジェクトでも`deepLink`をサニタイズ（許可スキームのみ）。
+理由: UI取り扱い時の不正スキーム混入回避の強化。
+2025/11/16 13:16 変更: HTTPタイムアウトを構成値（httpTimeout）へ統一。観測キー（keys=）の計算は設定（logObservedKeys）で制御可能とした。
+理由: 高頻度ポーリング時の効率化と運用制御性の向上。
 -->
 
 # XRPLutter NFT Kit SDK 仕様書
@@ -146,9 +160,11 @@ class BurnResult { String txHash; }
   - 公開ビルダーAPI: `buildCreateOfferTxJson({...})`（送付側）, `buildAcceptOfferTxJson({...})`（受取側）を提供。
   - 事前チェック: `isTransferable(nftId)` を提供。`nft_info`からNFTokenのFlagsを取得し、`lsfTransferable`有無でユーザー間移転可否を判定。
   - Soft SBT運用補助: `XRPLutter.transferNft` に `metadataJson` を渡すと `MetadataUtils.isSoftSbtJson` により判定し、`warnIfSoftSbt`（ログ警告）/`blockIfSoftSbt`（例外で送付抑止）を選択可能（任意設定、デフォルトは警告有効・ブロック無効）。
-- バーン: NFTokenBurnを生成（所有者のみ実行可能）
-  - バーンは「バーンアドレスへ送付」ではなく NFTokenBurn トランザクション。発行者に戻さなくても所有者が直接バーンできる。
-  - 公開ビルダーAPI: `buildBurnTxJson({...})` を提供（外部署名前のtx_json）。
+  - バーン: NFTokenBurnを生成
+    - 所有者は常時バーン可能。
+    - 発行者/認可ミンターは、当該NFTがミント時に`tfBurnable`フラグで作成されている場合のみバーン可能。その際はNFTokenBurnに`Owner`（現在の所有者アドレス）を明示指定する。
+    - 注意: `tfBurnable`はミント時のトランザクションフラグで、NFTオブジェクトの`lsfBurnable`プロパティに反映される（不変）。
+  - 公開ビルダーAPI: `buildBurnTxJson({...})` を提供（外部署名前のtx_json）。所有者向け（`Owner`省略）のほか、発行者/認可ミンター向けに`ownerAddress`オプション（NFTokenBurn.Owner）で現在の所有者アドレスを指定可能。
   - デバッグ/確認用プレビュー: 直近構築tx_jsonを`lastMintTxPreview`/`lastBurnTxPreview`として参照可能（SDK内部フィールド）。
 
 ### 3.3 WalletConnector
@@ -193,7 +209,7 @@ class BurnResult { String txHash; }
 イベント発火例（Xamanアダプタ）
 - created: payloadId, deepLink/qrUrl を含む
 - opened: ステータスに基づき検出可能な場合
-- signed: 署名完了時
+- signed: 署名完了時（`account=`を含める）。SignIn時は送信なしのため、`payload/details/{payloadId}`から`response.account`等でアドレス確定し、戻り値へ`result.account`を返す。
 - submitted: txHash確定時（プロキシsubmit／クライアントsubmit）
 - rejected/timeout/error: 各条件で発火
 
@@ -262,10 +278,13 @@ class WalletConnectorConfig {
   final Uri? crossmarkProxyBaseUrl; // Crossmark（必要時）
   final Uri? gemWalletProxyBaseUrl; // GemWallet（必要時）
   final Uri? walletConnectProxyBaseUrl; // WalletConnect（必要時）
+  final Duration httpTimeout; // HTTP呼び出しのタイムアウト（作成/ステータス/詳細取得に適用）
   final Duration signingTimeout; // 署名待機のタイムアウト
   final Duration pollingInterval; // ステータス取得の間隔
   final bool webSubmitByExtension; // Web拡張が署名後にsubmitするか（true）/SDK側でsubmitするか（false）
   final bool verifyAddressBeforeSign; // 署名前に拡張の現在アドレスとセッションアドレスを照合するか
+  final bool disallowPrivateProxyHosts; // プライベート/リンクローカルホストのプロキシを拒否するか（既定false）
+  final bool logObservedKeys; // ステータス/詳細の観測キー(keys=)ログ出力を有効にするか（既定true）
 }
 
 ### 3.6 マネージドプロキシ・オプション（有料）
@@ -284,8 +303,8 @@ class WalletConnectorConfig {
   - `GET  /xumm/v1/payload/status/{payloadId}` （返却: `{ opened?, signed?, rejected?, txHash? | tx_blob? }`）
 - BYOS: SDKの`WalletConnectorConfig`はベースURL（例: `http://your.domain/xumm/v1/`）を受け取り、`payload/*` を相対で叩く。
 
-仕様書更新有無: 更新しました（WalletConnect v2 スケルトン、プロキシ連携骨子、デモUIの「Connect WalletConnect」ボタン追加を反映）。
-補足更新: デモUIの WalletConnect Proxy Base URL 入力欄追加、およびSDKのURL連結方式（Uri.resolve）を追記しました。
+仕様書更新有無: 更新しました（WalletConnect v2 スケルトン、プロキシ連携骨子、デモUIの「Connect WalletConnect」ボタン追加を反映、非破壊改善の反映）。
+補足更新: デモUIの WalletConnect Proxy Base URL 入力欄追加、SDKのURL連結方式（Uri.resolve）に加え、`disallowPrivateProxyHosts`（既定false）とWalletConnect返却`deepLink`のサニタイズ適用を追記しました。
 ```
 
 ### 3.4 メタデータとストレージ（Metadata/StorageProvider）

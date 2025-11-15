@@ -11,6 +11,8 @@
 // 理由: README/仕様書のコード例と整合し、利用者が文字列を意識せずに標準プロバイダを指定できるようにするため。
 // 2025/11/09 13:22 追加: 署名進捗イベント（SignProgressEvent/State）とキャンセル用トークン（CancelToken）。
 // 理由: 進捗ステート/キャンセル/タイムアウトのイベントAPIをWalletConnectorレベルで扱うためのモデルを提供する。
+// 2025/11/16 12:33 変更: WalletSession.addressを可変化。
+// 理由: 署名承認後に確定したアドレスをセッションへ反映し、後続API（getAccountInfo等）が最新アドレスを返すようにするため。
 // -------------------------------------------------------
 
 class WalletProvider {
@@ -27,7 +29,7 @@ class WalletProvider {
 
 class WalletSession {
   WalletSession({required this.address});
-  final String address;
+  String address;
 }
 
 class AccountInfo {

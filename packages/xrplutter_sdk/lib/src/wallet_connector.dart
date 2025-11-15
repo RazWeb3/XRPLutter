@@ -55,6 +55,18 @@
 // 理由: 不正スキーム混入によるXSS/不正リダイレクトの回避。
 // 2025/11/16 10:22 変更: WalletConnectスタブの乱数生成をRandom.secure()へ変更。
 // 理由: 誤用時の推測耐性を高める安全策。
+// 2025/11/16 12:30 変更: XamanフローにSignInフォールバックを追加。payload/detailsからresponse.accountを抽出しセッション/戻り値へ反映、signedメッセージへaccount=を出力。
+// 理由: 送信を伴わない署名ケースでアドレス未確定となる問題の解消と診断性向上。
+// 2025/11/16 12:31 変更: ステータスからのアカウント抽出を強化（status.account→response.account→meta.accountの順で走査）し、検出時はsession.addressへ反映。
+// 理由: Xaman/BYOSの応答差によりaccountがトップにない環境で未確定化する問題を解消。
+// 2025/11/16 12:32 変更: ペイロード作成失敗時にSignProgressState.errorを必ず発火（HTTP非200/例外）。
+// 理由: UIが待機継続してしまう問題の解消。
+// 2025/11/16 12:33 変更: WalletSession.addressの可変化に追随し、検出したaccountをセッションへ更新。
+// 理由: 承認後に確定したアドレスを後続APIへ反映するため。
+// 2025/11/16 12:34 変更: signedメッセージにaccount=を付与し、既存のkeys=ログを維持。
+// 理由: 診断ログの充実と可観測性向上。
+// 2025/11/16 13:16 変更: HTTPタイムアウトを構成値（httpTimeout）へ統一し、観測キー（keys=）の計算を設定（logObservedKeys）で制御。
+// 理由: 高頻度ポーリング時の効率化と運用制御性の向上。
 // -------------------------------------------------------
 
 import 'models.dart';
@@ -124,6 +136,9 @@ class WalletConnector {
   Future<Map<String, dynamic>> signAndSubmit({required Map<String, dynamic> txJson}) async {
     if (_session == null) {
       throw StateError('Wallet not connected');
+    }
+    if (_cancelToken != null && !_cancelToken!.canceled) {
+      throw StateError('SigningInProgress');
     }
     if (_adapter != null) {
       _cancelToken = CancelToken();
@@ -207,25 +222,53 @@ class XamanAdapter implements WalletAdapter {
     if (_scheme != 'http' && _scheme != 'https') {
       throw ArgumentError('Invalid proxy base URL scheme: ${base.scheme}');
     }
+    if (config.disallowPrivateProxyHosts) {
+      final host = base.host.toLowerCase();
+      bool _isPrivate = host == 'localhost' || host == '127.0.0.1' || host.startsWith('10.') || host.startsWith('192.168.');
+      if (!_isPrivate && host.startsWith('172.')) {
+        final parts = host.split('.');
+        if (parts.length > 1) {
+          final s = int.tryParse(parts[1]) ?? -1;
+          if (s >= 16 && s <= 31) {
+            _isPrivate = true;
+          }
+        }
+      }
+      if (_isPrivate) {
+        throw ArgumentError('Disallowed private/link-local proxy host: ' + base.toString());
+      }
+    }
     final _jwt = (config.jwtBearerToken ?? '').trim();
     if (_jwt.isEmpty) {
       throw StateError('Missing JWT bearer token for Xaman proxy');
     }
-    // ペイロード作成
-    final createRes = await http
-        .post(
-      base.resolve('payload/create'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + _jwt,
-      },
-      body: jsonEncode({'tx_json': txJson}),
-    )
-        .timeout(const Duration(seconds: 10));
-    if (createRes.statusCode != 200) {
-      throw StateError('Xaman proxy create failed: HTTP ${createRes.statusCode}');
+    Map<String, dynamic> createJson;
+    try {
+      final createRes = await http
+          .post(
+        base.resolve('payload/create'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + _jwt,
+        },
+        body: jsonEncode({'tx_json': txJson}),
+      )
+          .timeout(config.httpTimeout);
+      if (createRes.statusCode != 200) {
+        onEvent(SignProgressEvent(
+          state: SignProgressState.error,
+          message: 'Create failed: HTTP ' + createRes.statusCode.toString(),
+        ));
+        throw StateError('Xaman proxy create failed: HTTP ${createRes.statusCode}');
+      }
+      createJson = jsonDecode(createRes.body) as Map<String, dynamic>;
+    } catch (e) {
+      onEvent(SignProgressEvent(
+        state: SignProgressState.error,
+        message: 'Create request failed: ' + e.toString(),
+      ));
+      rethrow;
     }
-    final createJson = jsonDecode(createRes.body) as Map<String, dynamic>;
     String? payloadId = createJson['payloadId']?.toString() ?? createJson['uuid']?.toString();
     String? deepLink = createJson['deepLink']?.toString();
     final dynamic next = createJson['next'];
@@ -260,9 +303,11 @@ class XamanAdapter implements WalletAdapter {
     }
 
     final observedCreateKeys = <String>[];
-    try {
-      observedCreateKeys.addAll(createJson.keys.map((e) => e.toString()));
-    } catch (_) {}
+    if (config.logObservedKeys) {
+      try {
+        observedCreateKeys.addAll(createJson.keys.map((e) => e.toString()));
+      } catch (_) {}
+    }
     onEvent(SignProgressEvent(
       state: SignProgressState.created,
       payloadId: payloadId,
@@ -297,7 +342,7 @@ class XamanAdapter implements WalletAdapter {
               'Authorization': 'Bearer ' + _jwt,
             },
           )
-              .timeout(const Duration(seconds: 10));
+              .timeout(config.httpTimeout);
       if (statusRes.statusCode != 200) {
         final baseMs = config.pollingInterval.inMilliseconds * (1 << (_attempt.clamp(0, 4)));
         final jitterMs = ((baseMs * 0.2) * ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000)).round();
@@ -310,13 +355,15 @@ class XamanAdapter implements WalletAdapter {
       final rejected = statusJson['rejected'] == true || (statusJson['response']?['rejected'] == true);
       final opened = statusJson['opened'] == true || (statusJson['response']?['opened'] == true);
       final observedStatusKeys = <String>[];
-      try {
-        observedStatusKeys.addAll(statusJson.keys.map((e) => e.toString()));
-        final r2 = statusJson['response'];
-        if (r2 is Map) observedStatusKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
-        final m2 = statusJson['meta'];
-        if (m2 is Map) observedStatusKeys.addAll(m2.keys.map((e) => 'meta.' + e.toString()));
-      } catch (_) {}
+      if (config.logObservedKeys) {
+        try {
+          observedStatusKeys.addAll(statusJson.keys.map((e) => e.toString()));
+          final r2 = statusJson['response'];
+          if (r2 is Map) observedStatusKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
+          final m2 = statusJson['meta'];
+          if (m2 is Map) observedStatusKeys.addAll(m2.keys.map((e) => 'meta.' + e.toString()));
+        } catch (_) {}
+      }
       if (opened && !_openedEmitted) {
         onEvent(SignProgressEvent(
           state: SignProgressState.opened,
@@ -350,6 +397,59 @@ class XamanAdapter implements WalletAdapter {
       ));
       throw StateError('SignTimeout');
     }
+    final txnType = txJson['TransactionType']?.toString();
+    String? _account = statusJson['account']?.toString() ?? statusJson['response']?['account']?.toString() ?? statusJson['meta']?['account']?.toString();
+    if (_account != null && _account.isNotEmpty) {
+      session.address = _account;
+    }
+    final _observedKeys = <String>[];
+    try {
+      _observedKeys.addAll(statusJson.keys.map((e) => e.toString()));
+      final r2 = statusJson['response'];
+      if (r2 is Map) _observedKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
+      final m2 = statusJson['meta'];
+      if (m2 is Map) _observedKeys.addAll(m2.keys.map((e) => 'meta.' + e.toString()));
+    } catch (_) {}
+
+    if (txnType == 'SignIn') {
+      String? acct = _account;
+      if (acct == null || acct.isEmpty) {
+        try {
+          final detailsRes = await http
+              .get(
+            base.resolve('payload/details/' + payloadId),
+            headers: {
+              'Authorization': 'Bearer ' + _jwt,
+            },
+          )
+              .timeout(config.httpTimeout);
+          if (detailsRes.statusCode == 200) {
+            final detailsJson = jsonDecode(detailsRes.body) as Map<String, dynamic>;
+            acct = detailsJson['response']?['account']?.toString() ?? detailsJson['account']?.toString() ?? detailsJson['meta']?['account']?.toString();
+          }
+        } catch (_) {}
+      }
+      if (acct != null && acct.isNotEmpty) {
+        session.address = acct;
+        onEvent(SignProgressEvent(
+          state: SignProgressState.signed,
+          payloadId: payloadId,
+          message: 'Signed' + ' | account=' + acct + (_observedKeys.isNotEmpty ? (' | keys=' + _observedKeys.join(',')) : ''),
+        ));
+        return {
+          'result': {
+            'account': acct,
+            'deepLink': _sanitizeUrl(deepLink),
+          }
+        };
+      }
+      onEvent(SignProgressEvent(
+        state: SignProgressState.error,
+        payloadId: payloadId,
+        message: 'Account not available for SignIn' + (_observedKeys.isNotEmpty ? (' | keys=' + _observedKeys.join(',')) : ''),
+      ));
+      throw StateError('SignInAccountNotAvailable');
+    }
 
     // 提供側がsubmit済みならtxHashが入っている想定。未送信ならSDKからsubmit。
     final txHash = statusJson['txHash']?.toString() ?? statusJson['response']?['txid']?.toString();
@@ -357,7 +457,7 @@ class XamanAdapter implements WalletAdapter {
       onEvent(SignProgressEvent(
         state: SignProgressState.signed,
         payloadId: payloadId,
-        message: 'Signed',
+        message: 'Signed' + (_account != null && _account.isNotEmpty ? (' | account=' + _account) : '') + (_observedKeys.isNotEmpty ? (' | keys=' + _observedKeys.join(',')) : ''),
       ));
       onEvent(SignProgressEvent(
         state: SignProgressState.submitted,
@@ -383,7 +483,7 @@ class XamanAdapter implements WalletAdapter {
     onEvent(SignProgressEvent(
       state: SignProgressState.signed,
       payloadId: payloadId,
-      message: 'Signed, submitting via client',
+      message: 'Signed, submitting via client' + (_account != null && _account.isNotEmpty ? (' | account=' + _account) : '') + (_observedKeys.isNotEmpty ? (' | keys=' + _observedKeys.join(',')) : ''),
     ));
     final submitRes = await client.call('submit', {'tx_blob': blob});
     final hash = submitRes['result']?['tx_json']?['hash']?.toString() ?? submitRes['result']?['txid']?.toString() ?? 'unknown';
@@ -480,17 +580,19 @@ class CrossmarkAdapter implements WalletAdapter {
         final blob = res['tx_blob']?.toString();
         // デバッグ補助: 観測キーを収集（トップレベル/代表的なネスト）
         final observedKeys = <String>{};
-        try {
-          observedKeys.addAll(res.keys.map((e) => e.toString()));
-          final r1 = res['result'];
-          if (r1 is Map) {
-            observedKeys.addAll(r1.keys.map((e) => 'result.' + e.toString()));
-          }
-          final r2 = res['response'];
-          if (r2 is Map) {
-            observedKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
-          }
-        } catch (_) {}
+        if (config.logObservedKeys) {
+          try {
+            observedKeys.addAll(res.keys.map((e) => e.toString()));
+            final r1 = res['result'];
+            if (r1 is Map) {
+              observedKeys.addAll(r1.keys.map((e) => 'result.' + e.toString()));
+            }
+            final r2 = res['response'];
+            if (r2 is Map) {
+              observedKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
+            }
+          } catch (_) {}
+        }
         final keysMsg = observedKeys.isNotEmpty ? (' keys=' + observedKeys.join(',')) : '';
         if (payloadIdFromRes != null && payloadIdFromRes.isNotEmpty) {
           // 参考情報としてpayloadIdをイベントに反映
@@ -698,17 +800,19 @@ class GemWalletAdapter implements WalletAdapter {
         final blob = res['tx_blob']?.toString();
         // デバッグ補助: 観測キーを収集（トップレベル/代表的なネスト）
         final observedKeys = <String>{};
-        try {
-          observedKeys.addAll(res.keys.map((e) => e.toString()));
-          final r1 = res['result'];
-          if (r1 is Map) {
-            observedKeys.addAll(r1.keys.map((e) => 'result.' + e.toString()));
-          }
-          final r2 = res['response'];
-          if (r2 is Map) {
-            observedKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
-          }
-        } catch (_) {}
+        if (config.logObservedKeys) {
+          try {
+            observedKeys.addAll(res.keys.map((e) => e.toString()));
+            final r1 = res['result'];
+            if (r1 is Map) {
+              observedKeys.addAll(r1.keys.map((e) => 'result.' + e.toString()));
+            }
+            final r2 = res['response'];
+            if (r2 is Map) {
+              observedKeys.addAll(r2.keys.map((e) => 'response.' + e.toString()));
+            }
+          } catch (_) {}
+        }
         final keysMsg = observedKeys.isNotEmpty ? (' keys=' + observedKeys.join(',')) : '';
         if (payloadIdFromRes != null && payloadIdFromRes.isNotEmpty) {
           onEvent(SignProgressEvent(
@@ -860,6 +964,22 @@ class WalletConnectAdapter implements WalletAdapter {
       if (_schemeWc != 'http' && _schemeWc != 'https') {
         throw ArgumentError('Invalid proxy base URL scheme: ${base.scheme}');
       }
+      if (config.disallowPrivateProxyHosts) {
+        final host = base.host.toLowerCase();
+        bool _isPrivate = host == 'localhost' || host == '127.0.0.1' || host.startsWith('10.') || host.startsWith('192.168.');
+        if (!_isPrivate && host.startsWith('172.')) {
+          final parts = host.split('.');
+          if (parts.length > 1) {
+            final s = int.tryParse(parts[1]) ?? -1;
+            if (s >= 16 && s <= 31) {
+              _isPrivate = true;
+            }
+          }
+        }
+        if (_isPrivate) {
+          throw ArgumentError('Disallowed private/link-local proxy host: ' + base.toString());
+        }
+      }
       try {
         // セッション生成（pairing URIを取得）。tx_jsonも渡しておく（サーバー側で後続のリクエストを発行する設計を想定）
         final _jwt = (config.jwtBearerToken ?? '').trim();
@@ -908,7 +1028,7 @@ class WalletConnectAdapter implements WalletAdapter {
               'Authorization': 'Bearer ' + _jwt,
             },
           )
-              .timeout(const Duration(seconds: 10));
+              .timeout(config.httpTimeout);
           if (statusRes.statusCode != 200) {
             final baseMs = config.pollingInterval.inMilliseconds * (1 << (_attempt.clamp(0, 4)));
             final jitterMs = ((baseMs * 0.2) * ((DateTime.now().microsecondsSinceEpoch % 1000) / 1000)).round();
@@ -972,7 +1092,7 @@ class WalletConnectAdapter implements WalletAdapter {
             'result': {
               'tx_json': txJson,
               'hash': txHash,
-              'deepLink': deepLink,
+              'deepLink': _sanitizeUrl(deepLink),
             }
           };
         }
@@ -998,7 +1118,7 @@ class WalletConnectAdapter implements WalletAdapter {
           'result': {
             'tx_json': txJson,
             'hash': hash,
-            'deepLink': deepLink,
+            'deepLink': _sanitizeUrl(deepLink),
           }
         };
       } catch (e) {
