@@ -1,6 +1,5 @@
 
-# プロジェクト名
-XRPLutter NFT Kit SDK
+# XRPLutter NFT Kit SDK
 
 ## プロジェクト概要
 XRPL（XRP Ledger）上でNFTのミント／送付／バーンをFlutter/Dartから安全かつ簡潔に扱えるSDKです。`docs/sdk_concept_summary.md` に記載の通り、以下を目的とします。
