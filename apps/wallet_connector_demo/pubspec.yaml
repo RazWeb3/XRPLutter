@@ -5,6 +5,8 @@
 # 更新履歴:
 # 2025/11/09 14:25 追記: qr_flutter/intl 依存を追加。
 # 理由: DeepLinkのQR表示とイベント時刻のフォーマットを行うため。
+# 2025/11/17 09:43 変更: xrplutter_sdk を Git 依存に切替。
+# 理由: 外部プロジェクトから導入しやすくするため。モノレポ内では dependency_overrides でローカルpathを優先。
 # -------------------------------------------------------
 name: wallet_connector_demo
 description: "A new Flutter project."
@@ -39,7 +41,9 @@ dependencies:
   flutter:
     sdk: flutter
   xrplutter_sdk:
-    path: ../../packages/xrplutter_sdk
+    git:
+      url: https://github.com/RazWeb3/XRPLutter.git
+      path: packages/xrplutter_sdk
   qr_flutter: ^4.1.0
   intl: ^0.19.0
 
@@ -57,6 +61,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+dependency_overrides:
+  xrplutter_sdk:
+    path: ../../packages/xrplutter_sdk
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

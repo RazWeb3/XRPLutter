@@ -11,11 +11,38 @@
  理由: 初期リリースでの最小実装が利用者に分かりやすいよう運用ガイドを明記。
  2025/11/09 12:58 追記: ウォレット連携（Xaman/XUMM）のプロキシ方式とWalletConnectorConfigの使い方を追加。WalletProviderの標準定数（xumm/xaman/crossmark/gemwallet/walletconnect）を利用するコード例を追記。
  理由: 普及ウォレットへの順次対応方針に合わせ、導入手順と設定の明確化を図るため。
+ 2025/11/17 10:31 追記: 導入方法（git依存＋pathサブディレクトリ指定／モノレポでのdependency_overrides）を追加。
+ 理由: リポジトリ直下にpubspec.yamlがないため、外部導入時のサブディレクトリ指定が必須である点の周知と、モノレポ開発での混乱防止。
 -->
 
 # XRPLutter SDK 導入ガイド
 
 このドキュメントは、Flutter向けXRPLutter SDKの利用時に重要となるポイントを簡潔にまとめたものです。詳細な技術仕様は`docs/specification.md`をご参照ください。
+
+## 導入方法（pubspec）
+
+外部プロジェクトからGit依存で導入する場合は、リポジトリ直下に`pubspec.yaml`がないため、必ずサブディレクトリ（`packages/xrplutter_sdk`）を指定してください。
+
+```yaml
+dependencies:
+  xrplutter_sdk:
+    git:
+      url: https://github.com/RazWeb3/XRPLutter.git
+      path: packages/xrplutter_sdk
+      # ref: v0.1.1  # 推奨: タグやコミットSHAで固定
+```
+
+モノレポ（このリポジトリ）内での開発連携では、`dependency_overrides` によりローカルの`path`を優先します。
+
+```yaml
+dependency_overrides:
+  xrplutter_sdk:
+    path: ../../packages/xrplutter_sdk
+```
+
+補足:
+- `flutter pub get` 前に、既存の`pubspec.lock`を削除せずとも解決されますが、依存不整合時は `flutter clean` → `flutter pub get` を行ってください。
+- 再現性のため外部導入時は `ref` にタグやコミット固定を推奨します。
 
 ## クイックスタート（最短）
 ```
