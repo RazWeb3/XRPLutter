@@ -14,8 +14,8 @@ XRPL（XRP Ledger）上でNFTのミント／送付／バーンをFlutter/Dartか
 - 失敗しづらいパラメタ設計とエラーフィードバック
 
 ## WebアプリケーションURL
-- デモWebアプリ: 準備中（Vercelデプロイ予定）
-- ローカル実行ガイド: `packages/xrplutter_sdk/README.md` と `templates/byos_proxy_minimal_vercel/README.md` を参照
+- SDKを導入したデモアプリ: (https://mintdemo-teal.vercel.app/)
+
 
 ## 審査基準を満たしていることがわかる内容
 - テーマ適合: 「XRPL × AI開発」。SDKが提供する安定APIを介して補助的に活用（目的の「AI駆動開発の安定化」に準拠）。
