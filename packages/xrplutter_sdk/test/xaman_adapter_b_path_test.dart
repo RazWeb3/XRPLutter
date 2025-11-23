@@ -1,5 +1,5 @@
 // -------------------------------------------------------
-// 目的・役割: XamanAdapter（XUMM）連携のBパス（tx_blob返却→SDK側submit）をモックで検証する統合テスト。
+// 目的・役割: XamanAdapter 連携のBパス（tx_blob返却→SDK側submit）をモックで検証する統合テスト。
 //             payload/create→statusポーリング（signed & tx_blob）→XRPLClient.submit（スタブ）→hash返却までのイベント順序と結果を確認する。
 // 作成日: 2025/11/09
 // -------------------------------------------------------
@@ -32,6 +32,14 @@ class FakeXRPLClient extends XRPLClient {
     }
     return {'result': {}};
   }
+  @override
+  Future<Map<String, dynamic>> awaitTransaction(String hash, {Duration timeout = const Duration(seconds: 20), Duration pollInterval = const Duration(milliseconds: 800)}) async {
+    return {
+      'result': {
+        'validated': true
+      }
+    };
+  }
 }
 
 void main() {
@@ -48,13 +56,13 @@ void main() {
 
       server.listen((HttpRequest req) async {
         final path = req.uri.path;
-        if (req.method == 'POST' && path.endsWith('/xumm/v1/payload/create')) {
+        if (req.method == 'POST' && path.endsWith('/xaman/v1/payload/create')) {
           final body = await utf8.decoder.bind(req).join();
           final decoded = jsonDecode(body) as Map<String, dynamic>;
           expect(decoded.containsKey('tx_json'), isTrue);
           final res = {
             'payloadId': 'TEST_PAYLOAD_ID_B',
-            'deepLink': 'xumm://payload/TEST_PAYLOAD_ID_B',
+            'deepLink': 'xaman://payload/TEST_PAYLOAD_ID_B',
           };
           final text = jsonEncode(res);
           req.response.statusCode = 200;
@@ -64,7 +72,7 @@ void main() {
           return;
         }
 
-        if (req.method == 'GET' && path.contains('/xumm/v1/payload/status/')) {
+        if (req.method == 'GET' && path.contains('/xaman/v1/payload/status/')) {
           statusCalls += 1;
           Map<String, dynamic> res;
           if (statusCalls == 1) {
@@ -101,7 +109,7 @@ void main() {
 
     test('signAndSubmit submits via client when tx_blob is returned', () async {
       final config = WalletConnectorConfig(
-        xamanProxyBaseUrl: Uri.parse('http://localhost:$port/xumm/v1/'),
+        xamanProxyBaseUrl: Uri.parse('http://localhost:$port/xaman/v1/'),
         signingTimeout: const Duration(seconds: 5),
         pollingInterval: const Duration(milliseconds: 100),
         jwtBearerToken: 'dev-secret',

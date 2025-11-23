@@ -10,7 +10,7 @@
 // 2025/11/09 12:30 変更: マルチプロバイダ対応のアダプタ構造（Xaman/Crossmark/GemWallet/WalletConnect想定）を導入。
 // 理由: 普及率の高いウォレットの順次対応を柔軟化し、SDKの価値を高めるため（内部拡張）。
 // 2025/11/09 12:58 変更: WalletConnectorConfig/XRPLClientの受け入れを追加。Xaman連携のプロキシ方式に対応する準備（HTTP呼び出し）を実装（スタブ）。
-// 理由: XUMMキーをクライアントに置かない設計のため、バックエンドプロキシを前提とした連携を容易にする。
+// 理由: Xamanキーをクライアントに置かない設計のため、バックエンドプロキシを前提とした連携を容易にする。
 // 2025/11/09 13:26 追加: 進捗イベントStream（SignProgressEvent）とキャンセル制御（CancelToken）を導入。Xamanアダプタでイベントを発火。
 // 理由: 進捗ステート/キャンセル/タイムアウトのイベントAPIをWalletConnectorレベルで提供し、UX向上と運用計測に備える。
 // 2025/11/09 14:02 変更: Crossmark/GemWalletアダプタの骨子を拡張し、イベント発火（created/opened/signed/submitted）とキャンセル対応のスタブを追加。
@@ -67,6 +67,12 @@
 // 理由: 診断ログの充実と可観測性向上。
 // 2025/11/16 13:16 変更: HTTPタイムアウトを構成値（httpTimeout）へ統一し、観測キー（keys=）の計算を設定（logObservedKeys）で制御。
 // 理由: 高頻度ポーリング時の効率化と運用制御性の向上。
+// 2025/11/23 10:14 変更: getAccountInfoでaccount_infoからSequenceを取得するように改善。
+// 理由: ダミー値を排し、正確なシーケンス管理により送信失敗を低減するため。
+// 2025/11/23 10:15 変更: tx_blob送信後にawaitTransactionで検証待ちを追加。
+// 理由: 信頼できる送信（reliable submission）に準拠して結果の確定性を高めるため。
+// 2025/11/23 10:16 変更: Xamanのpayload details取得は設定フラグ有効時のみ呼び出すよう制御。
+// 理由: BYOSテンプレートにdetailsエンドポイントがない構成との整合性を確保するため。
 // -------------------------------------------------------
 
 import 'models.dart';
@@ -127,10 +133,12 @@ class WalletConnector {
     if (_session == null) {
       throw StateError('Wallet not connected');
     }
-    return AccountInfo(address: _session!.address, sequence: 1);
+    final ai = await _client.call('account_info', {'account': _session!.address, 'ledger_index': 'current'});
+    final seq = ai['result']?['account_data']?['Sequence'] as int? ?? 0;
+    return AccountInfo(address: _session!.address, sequence: seq);
   }
 
-  /// 署名要求＋送信のスタブ（今後、Xumm/WalletConnect等と連携）
+  /// 署名要求＋送信のスタブ（今後、Xaman/WalletConnect等と連携）
   /// txJson: 署名前のトランザクションJSON（NFTokenMint/NFTokenCreateOffer/NFTokenBurn等）
   /// 戻り値: 送信結果（ダミー）
   Future<Map<String, dynamic>> signAndSubmit({required Map<String, dynamic> txJson}) async {
@@ -162,8 +170,7 @@ class WalletConnector {
 
   WalletAdapter? _resolveAdapter(WalletProvider provider) {
     switch (provider.name.toLowerCase()) {
-      case 'xaman': // 旧xumm
-      case 'xumm':
+      case 'xaman':
         return XamanAdapter();
       case 'crossmark':
         return CrossmarkAdapter();
@@ -190,7 +197,7 @@ abstract class WalletAdapter {
   });
 }
 
-/// Xaman（旧XUMM）用アダプタ（現時点はスタブ）。
+/// Xaman用アダプタ（現時点はスタブ）。
 class XamanAdapter implements WalletAdapter {
   @override
   Future<Map<String, dynamic>> signAndSubmit({
@@ -281,10 +288,10 @@ class XamanAdapter implements WalletAdapter {
       qrUrl = refs['qr_png']?.toString();
     }
     if ((deepLink == null || deepLink.isEmpty) && (payloadId != null && payloadId.isNotEmpty)) {
-      deepLink = 'https://xumm.app/sign/' + payloadId;
+      deepLink = 'https://xaman.app/sign/' + payloadId;
     }
     if ((qrUrl == null || qrUrl.isEmpty) && (payloadId != null && payloadId.isNotEmpty)) {
-      qrUrl = 'https://xumm.app/sign/' + payloadId + '_q.png';
+      qrUrl = 'https://xaman.app/sign/' + payloadId + '_q.png';
     }
     if ((payloadId == null || payloadId.isEmpty) && (deepLink != null && deepLink.isNotEmpty)) {
       try {
@@ -414,20 +421,22 @@ class XamanAdapter implements WalletAdapter {
     if (txnType == 'SignIn') {
       String? acct = _account;
       if (acct == null || acct.isEmpty) {
-        try {
-          final detailsRes = await http
-              .get(
-            base.resolve('payload/details/' + payloadId),
-            headers: {
-              'Authorization': 'Bearer ' + _jwt,
-            },
-          )
-              .timeout(config.httpTimeout);
-          if (detailsRes.statusCode == 200) {
-            final detailsJson = jsonDecode(detailsRes.body) as Map<String, dynamic>;
-            acct = detailsJson['response']?['account']?.toString() ?? detailsJson['account']?.toString() ?? detailsJson['meta']?['account']?.toString();
-          }
-        } catch (_) {}
+        if (config.xamanProxyDetailsEnabled == true) {
+          try {
+            final detailsRes = await http
+                .get(
+              base.resolve('payload/details/' + payloadId),
+              headers: {
+                'Authorization': 'Bearer ' + _jwt,
+              },
+            )
+                .timeout(config.httpTimeout);
+            if (detailsRes.statusCode == 200) {
+              final detailsJson = jsonDecode(detailsRes.body) as Map<String, dynamic>;
+              acct = detailsJson['response']?['account']?.toString() ?? detailsJson['account']?.toString() ?? detailsJson['meta']?['account']?.toString();
+            }
+          } catch (_) {}
+        }
       }
       if (acct != null && acct.isNotEmpty) {
         session.address = acct;
@@ -487,6 +496,9 @@ class XamanAdapter implements WalletAdapter {
     ));
     final submitRes = await client.call('submit', {'tx_blob': blob});
     final hash = submitRes['result']?['tx_json']?['hash']?.toString() ?? submitRes['result']?['txid']?.toString() ?? 'unknown';
+    if (hash.isNotEmpty) {
+      await client.awaitTransaction(hash, timeout: const Duration(seconds: 30));
+    }
     onEvent(SignProgressEvent(
       state: SignProgressState.submitted,
       payloadId: payloadId,
@@ -647,6 +659,9 @@ class CrossmarkAdapter implements WalletAdapter {
           ));
           final submitRes = await client.call('submit', {'tx_blob': blob});
           final hash = submitRes['result']?['tx_json']?['hash']?.toString() ?? submitRes['result']?['txid']?.toString() ?? 'unknown';
+          if (hash.isNotEmpty) {
+            await client.awaitTransaction(hash, timeout: const Duration(seconds: 30));
+          }
           onEvent(SignProgressEvent(
             state: SignProgressState.submitted,
             payloadId: payloadIdFromRes ?? payloadId,
@@ -866,6 +881,9 @@ class GemWalletAdapter implements WalletAdapter {
           ));
           final submitRes = await client.call('submit', {'tx_blob': blob});
           final hash = submitRes['result']?['tx_json']?['hash']?.toString() ?? submitRes['result']?['txid']?.toString() ?? 'unknown';
+          if (hash.isNotEmpty) {
+            await client.awaitTransaction(hash, timeout: const Duration(seconds: 30));
+          }
           onEvent(SignProgressEvent(
             state: SignProgressState.submitted,
             payloadId: payloadIdFromRes ?? payloadId,
@@ -1206,7 +1224,7 @@ class WalletConnectAdapter implements WalletAdapter {
   }
 }
 
-bool _isAllowedUrlScheme(String? url, {Set<String> allow = const {'https', 'xumm', 'xaman', 'crossmark', 'gemwallet', 'wc'}}) {
+bool _isAllowedUrlScheme(String? url, {Set<String> allow = const {'https', 'xaman', 'crossmark', 'gemwallet', 'wc'}}) {
   if (url == null || url.isEmpty) return false;
   final uri = Uri.tryParse(url);
   if (uri == null) return false;

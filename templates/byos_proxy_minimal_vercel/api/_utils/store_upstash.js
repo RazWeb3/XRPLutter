@@ -23,11 +23,11 @@ function create(ttlSeconds) {
       const s = await redis.get(`wc:${id}`);
       return s ? JSON.parse(s) : null;
     },
-    async setXummPayload(id, obj) {
-      await redis.set(`xumm:${id}`, JSON.stringify(obj), { ex: ttlSeconds });
+    async setXamanPayload(id, obj) {
+      await redis.set(`xaman:${id}`, JSON.stringify(obj), { ex: ttlSeconds });
     },
-    async getXummPayload(id) {
-      const p = await redis.get(`xumm:${id}`);
+    async getXamanPayload(id) {
+      const p = await redis.get(`xaman:${id}`);
       return p ? JSON.parse(p) : null;
     },
   };

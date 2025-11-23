@@ -5,8 +5,8 @@ const jwt = require('jsonwebtoken');
 
 process.env.JWT_SECRET = 'dev-secret';
 process.env.CORS_ORIGINS = 'http://localhost:53210';
-process.env.XUMM_API_KEY = 'test-key';
-process.env.XUMM_API_SECRET = 'test-secret';
+process.env.XAMAN_API_KEY = 'test-key';
+process.env.XAMAN_API_SECRET = 'test-secret';
 
 function makeReqRes({ method = 'GET', headers = {}, query = {}, body = null } = {}) {
   const resHeaders = new Map();

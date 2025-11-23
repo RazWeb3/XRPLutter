@@ -5,15 +5,15 @@
 
 # BYOS Proxy Minimal (Vercel)
 
-このテンプレートは、WalletConnect v2 と XUMM/Xaman 連携のための最小プロキシを Vercel に即デプロイできる形で提供します。
+このテンプレートは、WalletConnect v2 と Xaman 連携のための最小プロキシを Vercel に即デプロイできる形で提供します。
 
 特徴
 - KV有無切り替え: STORAGE_BACKEND=memory | upstash（Upstash Redis利用）
 - エンドポイント:
   - POST /api/walletconnect/v1/session/create
   - GET  /api/walletconnect/v1/session/status/:id
-  - POST /api/xumm/v1/payload/create
-  - GET  /api/xumm/v1/payload/status/:payloadId
+  - POST /api/xaman/v1/payload/create
+  - GET  /api/xaman/v1/payload/status/:payloadId
 - セキュリティ最低限: 短命JWT検証、厳格CORS（ホワイトリスト）
  - セキュリティ最低限: 短命JWT検証（`exp`必須＋TTL上限）、簡易レート制限、厳格CORS（ホワイトリスト）
 
@@ -28,7 +28,7 @@
 3) Deploy ボタンを押す
 4) 付与されたURL（例: https://your-app.vercel.app/）をSDK設定に貼り付け
    - WalletConnect: https://your-app.vercel.app/api/walletconnect/v1/
-   - XUMM/Xaman: https://your-app.vercel.app/api/xumm/v1/
+  - Xaman: https://your-app.vercel.app/api/xaman/v1/
 
 注意
 - KVなし（memory）はサーバレスのインスタンス切替で状態が揮発する可能性があります。少人数の検証やPoCでは成立しますが、本番ではKV/DB利用を推奨します。
@@ -45,4 +45,4 @@ JWT運用メモ
 
 ライセンス/運用
 - 公開前にCORSのホワイトリストを最小にし、JWTを短命化してください。
-- 実連携（XUMM APIキーやWC v2ハンドシェイク）はこの最小スタブの上に拡張してください。
+- 実連携（Xaman APIキーやWC v2ハンドシェイク）はこの最小スタブの上に拡張してください。

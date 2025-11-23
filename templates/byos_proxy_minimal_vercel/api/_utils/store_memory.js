@@ -5,7 +5,7 @@
 
 function create(ttlSeconds) {
   const wcMap = new Map();
-  const xummMap = new Map();
+  const xamanMap = new Map();
 
   function setWithTtl(map, key, value) {
     map.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
@@ -28,11 +28,11 @@ function create(ttlSeconds) {
     async getWcSession(id) {
       return getWithTtl(wcMap, `wc:${id}`);
     },
-    async setXummPayload(id, obj) {
-      setWithTtl(xummMap, `xumm:${id}`, obj);
+    async setXamanPayload(id, obj) {
+      setWithTtl(xamanMap, `xaman:${id}`, obj);
     },
-    async getXummPayload(id) {
-      return getWithTtl(xummMap, `xumm:${id}`);
+    async getXamanPayload(id) {
+      return getWithTtl(xamanMap, `xaman:${id}`);
     },
   };
 }

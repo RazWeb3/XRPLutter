@@ -1,5 +1,5 @@
 // -------------------------------------------------------
-// 目的・役割: XamanAdapter（XUMM）連携の統合テスト（モックサーバ）を実施し、
+// 目的・役割: XamanAdapter 連携の統合テスト（モックサーバ）を実施し、
 //             payload/create→statusポーリング→結果返却のイベント順序と最終hashを検証する。
 // 作成日: 2025/11/09
 //
@@ -34,14 +34,14 @@ void main() {
       // シンプルなルーティング
       server.listen((HttpRequest req) async {
         final path = req.uri.path;
-        if (req.method == 'POST' && path.endsWith('/xumm/v1/payload/create')) {
+        if (req.method == 'POST' && path.endsWith('/xaman/v1/payload/create')) {
           final body = await utf8.decoder.bind(req).join();
           // 受信tx_jsonは検証不要（存在だけ確認）
           final decoded = jsonDecode(body) as Map<String, dynamic>;
           expect(decoded.containsKey('tx_json'), isTrue);
           final res = {
             'payloadId': 'TEST_PAYLOAD_ID',
-            'deepLink': 'xumm://payload/TEST_PAYLOAD_ID',
+            'deepLink': 'xaman://payload/TEST_PAYLOAD_ID',
             'qrUrl': 'https://example.com/qr/TEST_PAYLOAD_ID',
           };
           final text = jsonEncode(res);
@@ -52,7 +52,7 @@ void main() {
           return;
         }
 
-        if (req.method == 'GET' && path.contains('/xumm/v1/payload/status/')) {
+        if (req.method == 'GET' && path.contains('/xaman/v1/payload/status/')) {
           statusCalls += 1;
           Map<String, dynamic> res;
           if (statusCalls == 1) {
@@ -91,7 +91,7 @@ void main() {
 
     test('signAndSubmit emits events and returns final hash', () async {
       final config = WalletConnectorConfig(
-        xamanProxyBaseUrl: Uri.parse('http://localhost:$port/xumm/v1/'),
+        xamanProxyBaseUrl: Uri.parse('http://localhost:$port/xaman/v1/'),
         signingTimeout: const Duration(seconds: 5),
         pollingInterval: const Duration(milliseconds: 100),
         jwtBearerToken: 'dev-secret',

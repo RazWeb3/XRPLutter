@@ -24,7 +24,7 @@
 2025/11/09 13:28 追記: WalletConnectorの進捗イベントAPI（SignProgressEvent/State）とキャンセル制御（CancelToken）を追加。WalletConnectorConfigにCrossmark/GemWallet/WalletConnectのベースURLを拡張。
 理由: 進捗ステート/キャンセル/タイムアウトのイベントAPI要求への対応と、BYOS設計でウォレット別URLを任意設定できるようにするため。
 2025/11/09 13:42 追記: マネージドプロキシ・オプション（有料）の概要と、ウォレット別URLフォルダ＋v1のエンドポイント設計を章として追加。
-理由: 議事録の合意事項（BYOS前提＋オプション提供）とURL設計ルール（/xumm/v1/ 等）を仕様に明記して整合性を担保するため。
+理由: 議事録の合意事項（BYOS前提＋オプション提供）とURL設計ルール（/xaman/v1/ 等）を仕様に明記して整合性を担保するため。
 2025/11/09 15:50 追記: WalletConnectorConfigに `webSubmitByExtension` と `verifyAddressBeforeSign` を追加。Crossmark/GemWallet連携における送信方式（拡張側submit/SDK側submit）と事前アドレス検証の挙動を明文化。
 理由: 実拡張APIの差異に柔軟対応し、検証を任意化するための設定を仕様へ反映。
 2025/11/10 12:25 追記: CrossmarkのWebインタロップ呼び出し優先順位（async.signAndWait→sync.sign+api.awaitRequest/sync.getResponse→api.request+awaitRequest）と、結果の正規化（txHash/hash/txid/tx_blob/uuid等の代表キー抽出）を明記。
@@ -57,6 +57,8 @@
 理由: UI取り扱い時の不正スキーム混入回避の強化。
 2025/11/16 13:16 変更: HTTPタイムアウトを構成値（httpTimeout）へ統一。観測キー（keys=）の計算は設定（logObservedKeys）で制御可能とした。
 理由: 高頻度ポーリング時の効率化と運用制御性の向上。
+2025/11/23 10:36 変更: 旧表記のエンドポイントと環境変数をXamanへ統一（XAMAN_API_KEY/SECRET、/api/xaman/v1/、XAMAN_API_BASE）。
+理由: リブランド完了に伴い、誤認防止と最新運用へ整合させるため。
 -->
 
 # XRPLutter NFT Kit SDK 仕様書
@@ -65,7 +67,7 @@
 
 ## 1. アーキテクチャ概要
 - レイヤ構成:
-  - WalletConnector層: 外部ウォレット（例:Xumm）と接続/署名連携を担う
+  - WalletConnector層: 外部ウォレット（例:Xaman）と接続/署名連携を担う
   - XRPLClient層: XRPLノード（JSON-RPC/WebSocket/API）へのリクエスト送信を担う
   - NftService層: ミント/送付/バーン等のNFT操作を高レベルAPIとして提供
   - Model層: トランザクション/結果/エラーなどの型定義
@@ -177,7 +179,7 @@ class BurnResult { String txHash; }
   - オーケストレーション: XRPLutterの`mintNft/transferNft/burnNft`は、各NftServiceビルダーでtx_jsonを構築し、WalletConnectorの`signAndSubmit`へ渡す流れ。
 
 #### マルチプロバイダ対応（アダプタ構造）
-- 対応方針（優先順）: Xaman（旧XUMM）→ Crossmark → GemWallet → WalletConnect v2（可否調査）
+- 対応方針（優先順）: Xaman → Crossmark → GemWallet → WalletConnect v2（可否調査）
 - アダプタIF（概念）:
   - `WalletAdapter.signAndSubmit({txJson, session, config, client})`
   - `config`: `WalletConnectorConfig`（XamanプロキシURL、署名タイムアウト、ポーリング間隔）
@@ -198,8 +200,8 @@ class BurnResult { String txHash; }
 - 推奨ポーリング: 初期2秒、opened以降は3〜5秒のバックオフ。レート制限とSLOに応じて調整可。
  - 重複抑制: `opened`は一度のみ通知する（SDK側で重複発火を抑止）
 
-#### Xaman（旧XUMM）連携（推奨: バックエンドプロキシ方式）
-- 目的: XUMMのAPIキー/シークレットをクライアントへ置かない
+#### Xaman連携（推奨: バックエンドプロキシ方式）
+- 目的: XamanのAPIキー/シークレットをクライアントへ置かない
 - フロー（UX最適案）:
   1) プロキシへペイロード作成（tx_json渡し）
   2) 戻り値のdeeplink/QR URLでユーザーへ署名提示（UIはアプリ側）
@@ -297,11 +299,11 @@ class WalletConnectorConfig {
 
 ### 3.7 エンドポイント設計（ウォレット別フォルダ＋v1）
 - ルール: ウォレット別にURLフォルダを分け、APIのバージョンを付与する。
-  - 例: `/xumm/v1/`, `/crossmark/v1/`, `/gemwallet/v1/`, `/walletconnect/v1/`
-- 代表エンドポイント（Xaman/XUMM）:
-  - `POST /xumm/v1/payload/create` （body: `{ tx_json: {...} }`）
-  - `GET  /xumm/v1/payload/status/{payloadId}` （返却: `{ opened?, signed?, rejected?, txHash? | tx_blob? }`）
-- BYOS: SDKの`WalletConnectorConfig`はベースURL（例: `http://your.domain/xumm/v1/`）を受け取り、`payload/*` を相対で叩く。
+  - 例: `/xaman/v1/`, `/crossmark/v1/`, `/gemwallet/v1/`, `/walletconnect/v1/`
+ - 代表エンドポイント（Xaman）:
+  - `POST /xaman/v1/payload/create` （body: `{ tx_json: {...} }`）
+  - `GET  /xaman/v1/payload/status/{payloadId}` （返却: `{ opened?, signed?, rejected?, txHash? | tx_blob? }`）
+ - BYOS: SDKの`WalletConnectorConfig`はベースURL（例: `http://your.domain/xaman/v1/`）を受け取り、`payload/*` を相対で叩く。
 
 仕様書更新有無: 更新しました（WalletConnect v2 スケルトン、プロキシ連携骨子、デモUIの「Connect WalletConnect」ボタン追加を反映、非破壊改善の反映）。
 補足更新: デモUIの WalletConnect Proxy Base URL 入力欄追加、SDKのURL連結方式（Uri.resolve）に加え、`disallowPrivateProxyHosts`（既定false）とWalletConnect返却`deepLink`のサニタイズ適用を追記しました。
@@ -366,7 +368,7 @@ class WalletConnectorConfig {
 ## 7. サンプルコード（案）
 ```dart
 final sdk = XRPLutter();
-await sdk.connectWallet(provider: WalletProvider.xumm);
+await sdk.connectWallet(provider: WalletProvider.xaman);
 
 // Mint
 final mint = await sdk.mintNft(
@@ -410,17 +412,17 @@ final br = await sdk.burnNft(nftId: mint.nftId);
 
 ---
 
-## 13. クリエイター導入チェックリスト（BYOS／XUMM）
+## 13. クリエイター導入チェックリスト（BYOS／Xaman）
 
-### 13.1 準備（XUMM）
-- XUMM開発者ポータルで`XUMM_API_KEY`/`XUMM_API_SECRET`を取得
+### 13.1 準備（Xaman）
+- Xaman開発者ポータルで`XAMAN_API_KEY`/`XAMAN_API_SECRET`を取得
 - バックエンド（例: Vercel）に環境変数を設定
-  - `XUMM_API_KEY` / `XUMM_API_SECRET`
+  - `XAMAN_API_KEY` / `XAMAN_API_SECRET`
   - `JWT_SECRET`（例: 本番用の十分に長いランダム文字列）
   - `CORS_ORIGINS`（本番のWebオリジンをカンマ区切り）
 
 ### 13.2 プロキシ（BYOS）
-- ベースURL例: `https://<your-app>.vercel.app/api/xumm/v1/`
+- ベースURL例: `https://<your-app>.vercel.app/api/xaman/v1/`
 - エンドポイント:
   - `POST payload/create`（入力: `{ tx_json: {...} }`）
   - `GET  payload/status/{payloadId}`（出力: `{ opened?, signed?, rejected?, txHash? | tx_blob? }`）
@@ -437,7 +439,7 @@ final br = await sdk.burnNft(nftId: mint.nftId);
 ### 13.4 検証
 - curlで`create/status`が`200`となり、`payloadId/deepLink/qrUrl`と`opened/signed`が取れること
 - ブラウザのNetworkタブで`POST create`レスポンスに`payloadId`または`next.always/pushed`/`refs.qr_png`が含まれることを確認
-- UIでQR表示→XUMMで承認→`signed/submitted`と`txHash`反映
+- UIでQR表示→Xamanで承認→`signed/submitted`と`txHash`反映
 
 ### 13.5 トラブルシュート
 - `401 invalid token`: JWT未署名/失効/鍵不一致 → フロントでJWT再取得、`JWT_SECRET`整合

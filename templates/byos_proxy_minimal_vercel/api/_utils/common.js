@@ -61,6 +61,9 @@ function allowCors(origin, res) {
 function handleCorsPreflight(req, res) {
   allowCors(req.headers.origin, res);
   if (req.method === 'OPTIONS') {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     res.statusCode = 200;
     res.end();
     return true;
@@ -85,7 +88,14 @@ function verifyJwt(req, res) {
       res.end(JSON.stringify({ error: 'server misconfigured: JWT_SECRET missing' }));
       return false;
     }
-    const decoded = jwt.verify(token, secret);
+    const aud = process.env.JWT_AUD;
+    const iss = process.env.JWT_ISS;
+    const decoded = jwt.verify(token, secret, {
+      algorithms: ['HS256'],
+      audience: aud || undefined,
+      issuer: iss || undefined,
+      clockTolerance: 5,
+    });
     const nowSec = Math.floor(Date.now() / 1000);
     const maxTtl = parseInt(process.env.JWT_MAX_TTL_SECONDS || '300', 10);
     if (typeof decoded === 'object' && decoded && typeof decoded.exp === 'number') {
@@ -109,6 +119,11 @@ function verifyJwt(req, res) {
 function sendJson(res, obj) {
   res.statusCode = 200;
   res.setHeader('content-type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Frame-Options', 'DENY');
   res.end(JSON.stringify(obj));
 }
 

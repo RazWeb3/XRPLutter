@@ -15,6 +15,8 @@
 // 理由: SSRF耐性の強化。
 // 2025/11/16 10:24 変更: autofillの並列化と短期TTLキャッシュを導入。awaitTransactionにバックオフ＋not_found継続処理を追加。
 // 理由: レイテンシ低減と安定性向上。
+// 2025/11/23 10:20 変更: エンドポイントの私有/リンクローカル判定を厳密化（172.16/12およびIPv6の一部を考慮）。
+// 理由: SSRF耐性の改善。
 // -------------------------------------------------------
 
 import 'dart:convert';
@@ -99,8 +101,12 @@ class XRPLClient {
       throw ArgumentError('XRPL endpoint must use http/https scheme: ' + endpoint);
     }
     final host = uri.host.toLowerCase();
-    // localhost/loopbackはテスト用途を考慮して許可
-    if (host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('172.16.') || host.startsWith('172.17.') || host.startsWith('172.18.') || host.startsWith('172.19.') || host.startsWith('172.2') || host.startsWith('169.254.')) {
+    if (host == 'localhost' || host == '127.0.0.1' || host == '::1') {
+      return uri;
+    }
+    final isPrivateIpv4 = host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.') || RegExp(r'^172\.(1[6-9]|2[0-9]|3[0-1])\.').hasMatch(host);
+    final isPrivateIpv6 = host.startsWith('fe80') || host.startsWith('fc') || host.startsWith('fd');
+    if (isPrivateIpv4 || isPrivateIpv6) {
       throw ArgumentError('Disallowed private/link-local address: ' + endpoint);
     }
     return uri;
@@ -158,7 +164,16 @@ class XRPLClient {
     while (DateTime.now().isBefore(deadline)) {
       try {
         final res = await call('tx', {'transaction': hash});
-        last = res['result'] as Map<String, dynamic>?;
+        final r = res['result'];
+        if (r is Map) {
+          try {
+            last = Map<String, dynamic>.from(r);
+          } catch (_) {
+            last = r.cast<String, dynamic>();
+          }
+        } else {
+          last = null;
+        }
         final validated = last?['validated'] == true;
         if (validated) return res;
       } on XRPLSubmitError catch (e) {

@@ -27,7 +27,7 @@ XRPLutter NFT Kit SDKは、Flutter開発者（クリエイター）がXRPL（XRP
 
 ## 4. 機能要件
 ### 4.1 ウォレット連携
-- 外部ウォレット（例:Xumm）と安全に接続/切断できること
+- 外部ウォレット（例:Xaman）と安全に接続/切断できること
 - 秘密鍵はSDKで保持せず、すべての署名は外部ウォレットに委任すること
 - 接続中のアカウント情報の取得、署名要求の生成/送信
 
@@ -54,7 +54,7 @@ XRPLutter NFT Kit SDKは、Flutter開発者（クリエイター）がXRPL（XRP
 
 ## 6. 制約・前提
 - XRPLネットワークへの接続（Mainnet/Testnet）
-- 外部ウォレット（例:Xumm）の利用が前提
+- 外部ウォレット（例:Xaman）の利用が前提
 - ネットワーク状態やノード負荷による遅延の可能性
 - SDKはXRPLのNFT仕様（NFToken*トランザクション）に準拠
 
@@ -83,7 +83,7 @@ XRPLutter NFT Kit SDKは、Flutter開発者（クリエイター）がXRPL（XRP
 
 ## 12. 依存関係
 - XRPLノード（JSON-RPC/WebSocket/API）
-- 外部ウォレット（例:Xumm）
+- 外部ウォレット（例:Xaman）
 - Flutter/DartのHTTP・暗号関連ライブラリ
 
 ## 13. 未確定事項/今後の検討

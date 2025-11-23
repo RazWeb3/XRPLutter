@@ -4,12 +4,13 @@
 // -------------------------------------------------------
 
 const { v4: uuidv4 } = require('uuid');
-const { handleCorsPreflight, allowCors, verifyJwt, sendJson } = require('../../../_utils/common');
+const { handleCorsPreflight, allowCors, verifyJwt, sendJson, rateLimit } = require('../../../_utils/common');
 const { getStore } = require('../../../_utils/store');
 
 module.exports = async (req, res) => {
   allowCors(req.headers.origin, res);
   if (handleCorsPreflight(req, res)) return;
+  if (!(await rateLimit(req, res))) return;
   if (!verifyJwt(req, res)) return;
 
   const id = uuidv4();

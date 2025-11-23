@@ -5,6 +5,8 @@
 // 更新履歴:
 // 2025/11/16 10:27 変更: pingIntervalと受信サイズ上限、サニタイズ済みエラーイベントを追加。
 // 理由: 接続安定性とDoS耐性の向上。
+// 2025/11/23 10:21 変更: WSエンドポイントに私有/リンクローカルのホスト検証を追加。
+// 理由: SSRF耐性の改善。
 // -------------------------------------------------------
 
 import 'dart:async';
@@ -27,6 +29,14 @@ class XRPLWebSocketClient {
     final uri = Uri.parse(_endpoint);
     if (uri.scheme != 'ws' && uri.scheme != 'wss') {
       throw ArgumentError('XRPL WS endpoint must use ws/wss scheme: ' + _endpoint);
+    }
+    final host = uri.host.toLowerCase();
+    if (!(host == 'localhost' || host == '127.0.0.1' || host == '::1')) {
+      final isPrivateIpv4 = host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.') || RegExp(r'^172\.(1[6-9]|2[0-9]|3[0-1])\.').hasMatch(host);
+      final isPrivateIpv6 = host.startsWith('fe80') || host.startsWith('fc') || host.startsWith('fd');
+      if (isPrivateIpv4 || isPrivateIpv6) {
+        throw ArgumentError('Disallowed private/link-local address: ' + _endpoint);
+      }
     }
     _socket = await WebSocket.connect(_endpoint);
     _socket!.pingInterval = const Duration(seconds: 30);

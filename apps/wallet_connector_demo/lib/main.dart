@@ -154,8 +154,8 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                 if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
                 if ((ev.deepLink ?? '').isEmpty &&
                     (ev.payloadId ?? '').isNotEmpty) {
-                  _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
-                  _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
+                  _deepLink = 'https://xaman.app/sign/${ev.payloadId}';
+                  _qrUrl = 'https://xaman.app/sign/${ev.payloadId}_q.png';
                 }
                 if (ev.txHash != null) _resultHash = ev.txHash;
                 if (ev.state == SignProgressState.opened) {
@@ -311,8 +311,8 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                 if ((ev.qrUrl ?? '').isNotEmpty) _qrUrl = ev.qrUrl;
                 if ((ev.deepLink ?? '').isEmpty &&
                     (ev.payloadId ?? '').isNotEmpty) {
-                  _deepLink = 'https://xumm.app/sign/${ev.payloadId}';
-                  _qrUrl = 'https://xumm.app/sign/${ev.payloadId}_q.png';
+                  _deepLink = 'https://xaman.app/sign/${ev.payloadId}';
+                  _qrUrl = 'https://xaman.app/sign/${ev.payloadId}_q.png';
                 }
                 if (ev.txHash != null) _resultHash = ev.txHash;
                 if (ev.state == SignProgressState.opened) {
@@ -348,9 +348,7 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
 
   Future<void> _signSample() async {
     Map<String, dynamic> txJson;
-    final isXaman =
-        (_provider?.name.toLowerCase() == 'xaman' ||
-        _provider?.name.toLowerCase() == 'xumm');
+    final isXaman = (_provider?.name.toLowerCase() == 'xaman');
     if (isXaman) {
       txJson = {'TransactionType': 'SignIn'};
     } else {
@@ -605,13 +603,13 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      const Text('Xaman (XUMM) Proxy Base URL (optional)'),
+                      const Text('Xaman Proxy Base URL (optional)'),
                       const SizedBox(height: 6),
                       TextField(
                         controller: _xamanProxyController,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
-                          hintText: '例: http://localhost:53211/xumm/v1/',
+                          hintText: '例: http://localhost:53211/xaman/v1/',
                           helperText: '末尾スラッシュ有無はどちらでも可（Uri.resolve）。',
                         ),
                       ),
@@ -652,7 +650,7 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                   ElevatedButton.icon(
                     onPressed: () => _connect(WalletProvider.xaman),
                     icon: const Icon(Icons.qr_code),
-                    label: const Text('Connect Xaman (XUMM)'),
+                    label: const Text('Connect Xaman'),
                   ),
                   ElevatedButton.icon(
                     onPressed: _signSample,
@@ -747,7 +745,7 @@ class _WalletConnectorDemoState extends State<WalletConnectorDemo> {
                                 final u = Uri.parse(_deepLink!);
                                 final s = u.scheme.toLowerCase();
                                 final host = u.host.toLowerCase();
-                                if (s == 'https' && host == 'xumm.app') {
+                                if (s == 'https' && host == 'xaman.app') {
                                   html.window.open(_deepLink!, '_blank');
                                 } else if (s == 'http' || s == 'https') {
                                   html.window.open(_deepLink!, '_blank');

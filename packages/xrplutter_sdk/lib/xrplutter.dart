@@ -17,6 +17,8 @@
 // 理由: READMEのクイックスタート/プロキシ設定例でライブラリ単一importで完結するようにするため。
 // 2025/11/13 15:40 追記: XRPLClientを公開exportに追加。
 // 理由: デモ/アプリ側でXRPLClientを直接注入して接続再利用・性能調整できるようにするため。
+// 2025/11/23 10:12 変更: mintNftにautofill適用とawaitTransactionによる検証待ちを追加し、NFT ID抽出ロジックを導入。
+// 理由: Fee/Sequence/LLSの自動充足と信頼できる送信（reliable submission）に準拠し、ミント結果のNFT IDを返却可能にするため。
 // -------------------------------------------------------
 
 library xrplutter;
@@ -75,7 +77,7 @@ class XRPLutter {
     bool? transferable,
   }) async {
     final account = await _wallet.getAccountInfo();
-    final txJson = _nft.buildMintTxJson(
+    var txJson = _nft.buildMintTxJson(
       accountAddress: account.address,
       metadataUri: metadataUri,
       taxon: taxon,
@@ -85,9 +87,48 @@ class XRPLutter {
       sbt: sbt,
       transferable: transferable,
     );
+    txJson = await _client.autofillTxJson(txJson);
     final submit = await _wallet.signAndSubmit(txJson: txJson);
-    final hash = submit['result']?['hash'] ?? 'dummyHash';
-    return MintResult(transactionHash: hash, nftId: 'unknown');
+    final hash = submit['result']?['hash']?.toString();
+    if (hash == null || hash.isEmpty) {
+      throw StateError('Transaction hash not available');
+    }
+    final validated = await _client.awaitTransaction(hash, timeout: const Duration(seconds: 30));
+    Map<String, dynamic> meta = const {};
+    final r = validated['result'];
+    if (r is Map) {
+      final m = r['meta'];
+      if (m is Map) {
+        try {
+          meta = Map<String, dynamic>.from(m);
+        } catch (_) {
+          meta = m.cast<String, dynamic>();
+        }
+      }
+    }
+    String? nftId;
+    nftId = meta['nftoken_id']?.toString() ?? meta['nftokenId']?.toString();
+    if (nftId == null || nftId.isEmpty) {
+      final nodes = meta['AffectedNodes'] as List? ?? const [];
+      for (final n in nodes) {
+        final m = Map<String, dynamic>.from(n as Map);
+        final created = m['CreatedNode'] as Map<String, dynamic>?;
+        if (created != null && (created['LedgerEntryType']?.toString() ?? '') == 'NFTokenPage') {
+          final fields = (created['NewFields'] ?? created['FinalFields']) as Map<String, dynamic>? ?? {};
+          final tokens = fields['NFTokens'] as List? ?? const [];
+          for (final t in tokens) {
+            final tm = Map<String, dynamic>.from(t as Map);
+            final id = tm['NFToken']?['NFTokenID']?.toString();
+            if (id != null && id.isNotEmpty) {
+              nftId = id;
+              break;
+            }
+          }
+          if (nftId != null && nftId.isNotEmpty) break;
+        }
+      }
+    }
+    return MintResult(transactionHash: hash, nftId: nftId ?? 'unknown');
   }
 
   /// 便利API: 通常NFTをミント（チェーンレベルで転送可能）

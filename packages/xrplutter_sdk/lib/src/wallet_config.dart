@@ -9,6 +9,8 @@
 // 理由: 実拡張の仕様差（拡張側送信かSDK側送信か）に柔軟対応し、事前のアカウント一致検証を任意で行えるようにするため。
 // 2025/11/16 13:15 追記: 観測キーのログ出力制御（logObservedKeys）を追加。HTTPタイムアウトは構成値（httpTimeout）を統一使用。
 // 理由: 高頻度ポーリング時の軽量化と運用制御を可能にするため。
+// 2025/11/23 10:16 追記: Xaman詳細エンドポイント呼び出し制御フラグ（xamanProxyDetailsEnabled）を追加。
+// 理由: テンプレート構成に応じてdetails呼び出しの有無を切り替えるため。
 // -------------------------------------------------------
 
 class WalletConnectorConfig {
@@ -25,10 +27,27 @@ class WalletConnectorConfig {
     this.verifyAddressBeforeSign = false,
     this.disallowPrivateProxyHosts = false,
     this.logObservedKeys = true,
+    this.xamanProxyDetailsEnabled = false,
   });
 
-  /// Xaman/XUMM連携用のバックエンドプロキシのベースURL
-  /// - 推奨: XUMMのAPIキー/シークレットはバックエンド管理とし、SDKはこのプロキシを呼び出す
+  const WalletConnectorConfig.production({
+    this.xamanProxyBaseUrl,
+    this.crossmarkProxyBaseUrl,
+    this.gemWalletProxyBaseUrl,
+    this.walletConnectProxyBaseUrl,
+    this.jwtBearerToken,
+    this.signingTimeout = const Duration(seconds: 90),
+    this.pollingInterval = const Duration(seconds: 2),
+    this.httpTimeout = const Duration(seconds: 10),
+    this.webSubmitByExtension = true,
+    this.verifyAddressBeforeSign = false,
+    this.disallowPrivateProxyHosts = true,
+    this.logObservedKeys = false,
+    this.xamanProxyDetailsEnabled = false,
+  });
+
+  /// Xaman連携用のバックエンドプロキシのベースURL
+  /// - 推奨: XamanのAPIキー/シークレットはバックエンド管理とし、SDKはこのプロキシを呼び出す
   final Uri? xamanProxyBaseUrl;
 
   /// Crossmark連携用のベースURL（必要な場合に設定）
@@ -45,7 +64,7 @@ class WalletConnectorConfig {
   /// 署名待機のタイムアウト（ユーザー操作含む）
   final Duration signingTimeout;
 
-  /// 署名結果ポーリングの間隔（XUMMペイロードステータス取得など）
+  /// 署名結果ポーリングの間隔（Xamanペイロードステータス取得など）
   final Duration pollingInterval;
 
   /// プロキシへのHTTP呼び出しのタイムアウト
@@ -67,4 +86,7 @@ class WalletConnectorConfig {
 
   /// ステータス/詳細の観測キー（keys=）ログ出力を有効にするか（既定true）
   final bool logObservedKeys;
+
+  /// Xamanプロキシにdetailsエンドポイントがある場合のみtrue
+  final bool xamanProxyDetailsEnabled;
 }

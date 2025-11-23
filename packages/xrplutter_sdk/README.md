@@ -9,7 +9,7 @@
  理由: 議事録には内部検討内容が含まれるため、公開には不向きと判断。
  2025/11/09 11:35 追記: Soft SBT運用補助の使い方（metadataフラグ付与、送付時の警告/ブロック設定）を追加。
  理由: 初期リリースでの最小実装が利用者に分かりやすいよう運用ガイドを明記。
- 2025/11/09 12:58 追記: ウォレット連携（Xaman/XUMM）のプロキシ方式とWalletConnectorConfigの使い方を追加。WalletProviderの標準定数（xumm/xaman/crossmark/gemwallet/walletconnect）を利用するコード例を追記。
+2025/11/09 12:58 追記: ウォレット連携（Xaman）のプロキシ方式とWalletConnectorConfigの使い方を追加。WalletProviderの標準定数（xaman/crossmark/gemwallet/walletconnect）を利用するコード例を追記。
  理由: 普及ウォレットへの順次対応方針に合わせ、導入手順と設定の明確化を図るため。
  2025/11/17 10:31 追記: 導入方法（git依存＋pathサブディレクトリ指定／モノレポでのdependency_overrides）を追加。
  理由: リポジトリ直下にpubspec.yamlがないため、外部導入時のサブディレクトリ指定が必須である点の周知と、モノレポ開発での混乱防止。
@@ -48,7 +48,7 @@ dependency_overrides:
 ```
 flutter run -d web-server --web-port 53210 \
   --dart-define=WC_PROXY_BASE_URL=http://localhost:53211/walletconnect/v1/ \
-  --dart-define=XAMAN_PROXY_BASE_URL=http://localhost:53211/xumm/v1/ \
+  --dart-define=XAMAN_PROXY_BASE_URL=http://localhost:53211/xaman/v1/ \
   --dart-define=JWT_BEARER_TOKEN=dev-secret
 ```
 
@@ -76,7 +76,7 @@ flutter run -d web-server --web-port 53210 \
 - テストネットでの検証時も、十分なXRPを用意してください（不足すると`insufficient reserve`エラーになります）。
 
 ## 署名・送信の流れ（概要）
-1. ウォレット接続（例: Xumm / WalletConnect）
+1. ウォレット接続（例: Xaman / WalletConnect）
 2. SDKが`NFTokenMint`や`NFTokenCreateOffer`のtx_jsonを構築
 3. 外部ウォレットで署名 → `tx_blob`を取得
 4. XRPLノードへ`submit`（`tx_blob`）
@@ -87,7 +87,7 @@ SDKは秘密鍵を保持しません。常に外部ウォレットで署名し�
 ```dart
 final sdk = XRPLutter();
 // 1) ウォレット接続
-await sdk.connectWallet(provider: WalletProvider.xumm);
+await sdk.connectWallet(provider: WalletProvider.xaman);
 
 // 2) 通常NFTミント（転送可能）
 final mint = await sdk.mintRegularNft(
@@ -109,8 +109,8 @@ final br = await sdk.burnNft(nftId: mint.nftId);
 
 非カストディアル運用では、SDK内部で`NftService.build*TxJson`によりtx_jsonを構築し、`WalletConnector.signAndSubmit`へ渡して外部署名→送信が行われます。受取側の`NFTokenAcceptOffer`は受取者のウォレットで別途署名してください。
 
-## ウォレット連携（Xaman/XUMM）とプロキシ設定
-XUMMのAPIキー/シークレットはクライアントアプリに置かず、バックエンドプロキシで管理する方式を推奨します。SDKはプロキシを介してペイロード作成・ステータス取得を行います。
+## ウォレット連携（Xaman）とプロキシ設定
+XamanのAPIキー/シークレットはクライアントアプリに置かず、バックエンドプロキシで管理する方式を推奨します。SDKはプロキシを介してペイロード作成・ステータス取得を行います。
 
 使用例（プロキシ設定）:
 ```dart
@@ -118,7 +118,7 @@ import 'package:xrplutter_sdk/xrplutter.dart';
 
 final connector = WalletConnector(
   config: WalletConnectorConfig(
-    xamanProxyBaseUrl: Uri.parse('https://your-proxy.example.com/xumm/'),
+    xamanProxyBaseUrl: Uri.parse('https://your-proxy.example.com/xaman/'),
     signingTimeout: const Duration(seconds: 90),
     pollingInterval: const Duration(seconds: 2),
   ),
@@ -126,7 +126,7 @@ final connector = WalletConnector(
 final sdk = XRPLutter(walletConnector: connector);
 
 // プロバイダ指定（標準定数）
-await sdk.connectWallet(provider: WalletProvider.xumm); // or WalletProvider.xaman
+await sdk.connectWallet(provider: WalletProvider.xaman);
 
 // 以降、mint/transfer/burnは通常通り呼び出し可能
 ```
@@ -141,7 +141,7 @@ await sdk.connectWallet(provider: WalletProvider.xumm); // or WalletProvider.xam
   - JWTは短寿命（例: 2分〜5分）でバックエンド発行し、`Authorization: Bearer` で使用
   - 開発時は `JWT_SECRET=dev-secret` を許可するが、本番ではランダムで長い秘密鍵を使用
   - CORSは `CORS_ORIGINS` にクライアントのオリジンのみを列挙（ワイルドカード不可）
-  - DeepLink/QRの提示先はXaman公式ドメイン（`https://xumm.app/...`）等に限定し、ユーザー誘導用の外部URLはホワイトリスト運用
+- DeepLink/QRの提示先はXaman公式ドメイン（`https://xaman.app/...`）等に限定し、ユーザー誘導用の外部URLはホワイトリスト運用
 
 ## JWT運用指針（最小）
 - 開発: `JWT_SECRET=dev-secret` とし、クライアントは `Authorization: Bearer dev-secret`

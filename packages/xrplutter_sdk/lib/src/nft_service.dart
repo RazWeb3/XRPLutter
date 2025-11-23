@@ -15,6 +15,12 @@
 // 理由: XLS-20互換性と相互運用性の向上（文字列エンコードの標準化）。
 // 2025/11/16 13:05 変更: 発行者バーン対応のため、buildBurnTxJson/burn/_buildBurnTxJsonにownerAddressオプションを追加（NFTokenBurn.Owner）。
 // 理由: tfBurnable設定済みNFTに対する発行者/認可ミンターのバーン機能をSDKビルダーで扱えるようにするため。
+// 2025/11/23 10:18 変更: tx_jsonビルダーからFee固定指定を撤廃し、autofill前提へ統一。
+// 理由: ネットワーク状況に応じたFee自動充足に準拠するため。
+// 2025/11/23 10:19 変更: NFTokenCreateOfferのFlags厳密化（売り: Flags=1）と買いオファー対応を追加。
+// 理由: XLS-20のオファー仕様に準拠し、誤動作を防ぐため。
+// 2025/11/23 10:19 変更: NFTokenAcceptOfferでSell/Buy両方のID指定に対応。
+// 理由: 片側のみの対応を是正。
 // -------------------------------------------------------
 
 import 'dart:convert';
@@ -155,7 +161,6 @@ class NftService {
       'NFTokenTaxon': taxon,
       'Flags': flagsValue,
       'URI': _stringToHex(metadataUri),
-      'Fee': '10',
     };
     if (transferFeeBps != null) {
       // 範囲チェック（0..50000）
@@ -228,7 +233,6 @@ class NftService {
       'TransactionType': 'NFTokenBurn',
       'Account': accountAddress,
       'NFTokenID': nftId,
-      'Fee': '10',
     };
     if (ownerAddress != null && ownerAddress.isNotEmpty) {
       tx['Owner'] = ownerAddress;
@@ -241,30 +245,49 @@ class NftService {
   Map<String, dynamic> buildCreateOfferTxJson({
     required String accountAddress,
     required String nftId,
-    required String destinationAddress,
-    String? amountDrops, // null/"0"でギフト
+    String? destinationAddress,
+    String? ownerAddress,
+    String? amountDrops,
+    bool sell = true,
   }) {
     final tx = <String, dynamic>{
       'TransactionType': 'NFTokenCreateOffer',
       'Account': accountAddress,
       'NFTokenID': nftId,
-      'Destination': destinationAddress,
-      'Fee': '10',
     };
-    tx['Amount'] = amountDrops ?? '0';
+    tx['Flags'] = sell ? 1 : 0;
+    if (sell) {
+      if (destinationAddress != null && destinationAddress.isNotEmpty) {
+        tx['Destination'] = destinationAddress;
+      }
+      tx['Amount'] = amountDrops ?? '0';
+    } else {
+      if (ownerAddress == null || ownerAddress.isEmpty) {
+        throw ArgumentError('Buy offer requires ownerAddress');
+      }
+      if (amountDrops == null || amountDrops.isEmpty) {
+        throw ArgumentError('Buy offer requires amountDrops');
+      }
+      tx['Owner'] = ownerAddress;
+      tx['Amount'] = amountDrops;
+    }
     return tx;
   }
 
   // 公開API: AcceptOffer用tx_jsonを構築（受取側が署名）
   Map<String, dynamic> buildAcceptOfferTxJson({
     required String accountAddress,
-    required String offerId,
+    String? sellOfferId,
+    String? buyOfferId,
   }) {
+    if ((sellOfferId == null || sellOfferId.isEmpty) && (buyOfferId == null || buyOfferId.isEmpty)) {
+      throw ArgumentError('Either sellOfferId or buyOfferId is required');
+    }
     return {
       'TransactionType': 'NFTokenAcceptOffer',
       'Account': accountAddress,
-      'SellOffer': offerId,
-      'Fee': '10',
+      if (sellOfferId != null && sellOfferId.isNotEmpty) 'SellOffer': sellOfferId,
+      if (buyOfferId != null && buyOfferId.isNotEmpty) 'BuyOffer': buyOfferId,
     };
   }
 
@@ -294,7 +317,6 @@ class NftService {
       'Account': accountAddress,
       'NFTokenID': nftId,
       if (ownerAddress != null && ownerAddress.isNotEmpty) 'Owner': ownerAddress,
-      'Fee': '10',
     };
   }
 }

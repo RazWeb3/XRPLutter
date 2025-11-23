@@ -17,7 +17,7 @@
 ## 2. プロキシ環境変数（Vercel）
 - `JWT_SECRET`: クライアントからの `Authorization: Bearer` 検証用の共有シークレット
 - `CORS_ORIGINS`: 許可するオリジン（例: `http://localhost:53210,https://yourapp.example.com`）
-- `XUMM_API_KEY`/`XUMM_API_SECRET`: Xaman 連携用（必要な場合のみ）
+- `XAMAN_API_KEY`/`XAMAN_API_SECRET`: Xaman 連携用（必要な場合のみ）
 
 ## 3. JWT の用意（簡易）
 - 開発: `JWT_SECRET=dev-secret` とした上で、クライアントも `Authorization: Bearer dev-secret` を使用
@@ -39,7 +39,7 @@ const token = jwt.sign({ sub: 'xrplutter-app' }, process.env.JWT_SECRET, { expir
 ```
 flutter run -d web-server --web-port 53210 \
   --dart-define=WC_PROXY_BASE_URL=http://localhost:53211/walletconnect/v1/ \
-  --dart-define=XAMAN_PROXY_BASE_URL=http://localhost:53211/xumm/v1/ \
+  --dart-define=XAMAN_PROXY_BASE_URL=http://localhost:53211/xaman/v1/ \
   --dart-define=JWT_BEARER_TOKEN=dev-secret
 ```
 
@@ -50,7 +50,7 @@ flutter run -d web-server --web-port 53210 \
 final connector = WalletConnector(
   config: WalletConnectorConfig(
     walletConnectProxyBaseUrl: Uri.parse('http://localhost:53211/walletconnect/v1/'),
-    xamanProxyBaseUrl: Uri.parse('http://localhost:53211/xumm/v1/'),
+    xamanProxyBaseUrl: Uri.parse('http://localhost:53211/xaman/v1/'),
     jwtBearerToken: 'dev-secret',
     signingTimeout: const Duration(seconds: 45),
     webSubmitByExtension: true,
@@ -64,9 +64,9 @@ await connector.connect(provider: WalletProvider.walletconnect);
 - WalletConnect v2
   - `POST /walletconnect/v1/session/create`
   - `GET  /walletconnect/v1/session/status/:id`
-- Xaman (XUMM)
-  - `POST /xumm/v1/payload/create`
-  - `GET  /xumm/v1/payload/status/:payloadId`
+- Xaman
+  - `POST /xaman/v1/payload/create`
+  - `GET  /xaman/v1/payload/status/:payloadId`
 
 ## トラブルシューティング（要点）
 - 401/403: JWT 不一致。`JWT_SECRET` と Bearer の整合を確認

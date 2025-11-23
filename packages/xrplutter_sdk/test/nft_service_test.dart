@@ -94,7 +94,7 @@ void main() {
       final service = NftService();
       final tx = service.buildAcceptOfferTxJson(
         accountAddress: 'rRECEIVER',
-        offerId: 'OFFER123',
+        sellOfferId: 'OFFER123',
       );
       expect(tx['SellOffer'], equals('OFFER123'));
     });
